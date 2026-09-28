@@ -1,0 +1,7 @@
+# FinSightX Spark Streaming
+#
+# PySpark is already included in the official
+# apache/spark Docker image.
+#
+# No additional Python packages are required
+# for the initial Kafka -> Spark -> MinIO pipeline.

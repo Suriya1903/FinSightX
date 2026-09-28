@@ -1,0 +1,27 @@
+{
+    "dataset": "fraud_training_dataset.parquet",
+    "records": 10000,
+    "features": [
+        "amount",
+        "amount_band_code",
+        "is_high_risk_merchant_category",
+        "has_device",
+        "has_location",
+        "customer_is_active",
+        "is_inr",
+        "is_pending",
+        "transaction_hour",
+        "transaction_day_of_week",
+        "is_weekend",
+        "is_night_transaction",
+        "transaction_velocity",
+        "recent_transaction_amount",
+        "high_velocity_amount",
+        "merchant_category",
+        "currency",
+        "transaction_status"
+    ],
+    "fraud_records": 207,
+    "fraud_rate": 0.0207,
+    "random_state": 42
+}

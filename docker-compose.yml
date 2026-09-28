@@ -1,0 +1,503 @@
+services:
+
+  # ==========================================================
+  # API GATEWAY
+  # ==========================================================
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+    container_name: finsightx-api-gateway
+    restart: unless-stopped
+
+    environment:
+      DATABASE_URL: postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+      CUSTOMER_SERVICE_URL: http://customer-service:8009
+      TRANSACTION_SERVICE_URL: http://transaction-service:8010
+
+    ports:
+      - "8002:8000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      customer-service:
+        condition: service_healthy
+      transaction-service:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+
+  # ==========================================================
+  # CUSTOMER SERVICE
+  # ==========================================================
+
+  customer-service:
+    build:
+      context: ./services/customer-service
+    container_name: finsightx-customer-service
+    restart: unless-stopped
+
+    environment:
+      DATABASE_URL: postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx
+
+    ports:
+      - "8009:8009"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8009/health')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+
+  # ==========================================================
+  # TRANSACTION SERVICE
+  # ==========================================================
+
+  transaction-service:
+    build:
+      context: ./services/transaction-service
+    container_name: finsightx-transaction-service
+    restart: unless-stopped
+
+    environment:
+      DATABASE_URL: postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+    ports:
+      - "8010:8010"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+
+  # ==========================================================
+  # AUDIT SERVICE
+  # ==========================================================
+
+  audit-service:
+    build:
+      context: ./services/audit-service
+    container_name: finsightx-audit-service
+    restart: unless-stopped
+
+    environment:
+      DATABASE_URL: postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: transaction.created
+      KAFKA_GROUP_ID: finsightx-audit-service
+
+    ports:
+      - "8006:8006"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8006/health')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+
+  # ==========================================================
+  # ML MODEL SERVICE
+  # ==========================================================
+
+  ml-service:
+    build:
+      context: ./services/ml-service
+      dockerfile: Dockerfile
+
+    container_name: finsightx-ml-service
+    restart: unless-stopped
+
+    environment:
+      MODEL_PATH: /app/models/fraud_random_forest.joblib
+      MODEL_VERSION: "7D"
+
+    ports:
+      - "8008:8008"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8008/ready')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+
+  # ==========================================================
+  # FRAUD SERVICE
+  # ==========================================================
+
+  fraud-service:
+    build:
+      context: ./services/fraud-service
+      dockerfile: Dockerfile
+
+    container_name: finsightx-fraud-service
+    restart: unless-stopped
+
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: transaction.created
+      KAFKA_GROUP_ID: finsightx-fraud-service
+
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      DATABASE_URL: postgresql://finsightx:change_me@postgres:5432/finsightx
+
+      ML_SERVICE_URL: http://ml-service:8008
+      ML_PREDICT_TIMEOUT_SECONDS: 10
+
+    ports:
+      - "8004:8004"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      kafka:
+        condition: service_started
+
+      redis:
+        condition: service_healthy
+
+      ml-service:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+
+  # ==========================================================
+  # NOTIFICATION SERVICE
+  # ==========================================================
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+    container_name: finsightx-notification-service
+    restart: unless-stopped
+
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: fraud.assessed
+      KAFKA_GROUP_ID: finsightx-notification-service
+
+    ports:
+      - "8005:8005"
+
+    depends_on:
+      kafka:
+        condition: service_started
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+
+  # ==========================================================
+  # SPARK STRUCTURED STREAMING + BATCH DATA PIPELINE
+  #
+  # Streaming:
+  # Kafka -> Spark -> MinIO
+  #
+  # Batch:
+  # MinIO -> Spark -> PostgreSQL
+  # ==========================================================
+
+  spark:
+    build:
+      context: ./streaming/spark
+      dockerfile: Dockerfile
+
+    container_name: finsightx-spark
+    restart: unless-stopped
+
+    command:
+      - tail
+      - -f
+      - /dev/null
+
+    environment:
+
+      # ------------------------------------------------------
+      # Kafka
+      # ------------------------------------------------------
+
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: transaction.created
+
+      # ------------------------------------------------------
+      # MinIO
+      # ------------------------------------------------------
+
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: change_me
+      MINIO_BUCKET: finsightx-data
+
+      # ------------------------------------------------------
+      # PostgreSQL
+      # Used by Phase 6C lake-to-warehouse batch loader
+      # ------------------------------------------------------
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: finsightx
+      POSTGRES_USER: finsightx
+      POSTGRES_PASSWORD: change_me
+
+    depends_on:
+      kafka:
+        condition: service_started
+
+      minio:
+        condition: service_healthy
+
+      postgres:
+        condition: service_healthy
+
+
+  # ==========================================================
+  # MINIO - LOCAL S3-COMPATIBLE DATA LAKE
+  # ==========================================================
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: finsightx-minio
+    restart: unless-stopped
+
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: change_me
+
+    command:
+      - server
+      - /data
+      - --console-address
+      - ":9001"
+
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+    volumes:
+      - finsightx_minio_data:/data
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:9000/minio/health/live"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+
+  # ==========================================================
+  # POSTGRESQL + PGVECTOR
+  # ==========================================================
+
+  postgres:
+    image: pgvector/pgvector:pg18
+    container_name: finsightx-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: finsightx
+      POSTGRES_USER: finsightx
+      POSTGRES_PASSWORD: change_me
+
+    ports:
+      - "5434:5432"
+
+    volumes:
+      - finsightx_postgres_data:/var/lib/postgresql
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U finsightx -d finsightx"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+
+  # ==========================================================
+  # REDIS
+  # ==========================================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: finsightx-redis
+    restart: unless-stopped
+
+    ports:
+      - "6380:6379"
+
+    volumes:
+      - finsightx_redis_data:/data
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+
+  # ==========================================================
+  # KAFKA
+  # ==========================================================
+
+  kafka:
+    image: apache/kafka:4.0.0
+    container_name: finsightx-kafka
+    restart: unless-stopped
+
+    ports:
+      - "29092:29092"
+
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092
+
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      KAFKA_NUM_PARTITIONS: 3
+
+    volumes:
+      - finsightx_kafka_data:/var/lib/kafka/data
+
+
+# ==========================================================
+# VOLUMES
+# ==========================================================
+
+volumes:
+
+  finsightx_postgres_data:
+
+  finsightx_redis_data:
+
+  finsightx_kafka_data:
+
+  finsightx_minio_data:
