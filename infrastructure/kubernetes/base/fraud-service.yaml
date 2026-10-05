@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-service
+  namespace: finsightx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fraud-service
+  template:
+    metadata:
+      labels:
+        app: fraud-service
+    spec:
+      containers:
+        - name: fraud-service
+          image: finsightx/fraud-service:k8s
+          imagePullPolicy: Never
+
+          ports:
+            - name: http
+              containerPort: 8004
+              protocol: TCP
+
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+
+            - name: KAFKA_TOPIC
+              value: "transaction.created"
+
+            - name: KAFKA_GROUP_ID
+              value: "finsightx-fraud-service"
+
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: REDIS_HOST
+
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: REDIS_PORT
+
+            - name: DATABASE_URL
+              value: "postgresql://finsightx:change_me@postgres:5432/finsightx"
+
+            - name: ML_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: ML_SERVICE_URL
+
+            - name: ML_PREDICT_TIMEOUT_SECONDS
+              value: "10"
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8004
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8004
+            initialDelaySeconds: 40
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "768Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-service
+  namespace: finsightx
+spec:
+  type: ClusterIP
+  selector:
+    app: fraud-service
+  ports:
+    - name: http
+      port: 8004
+      targetPort: 8004
+      protocol: TCP

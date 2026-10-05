@@ -1,12 +1,13 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.core.security import get_current_user
 from app.schemas.customer import (
     CustomerCreate,
     CustomerResponse,
 )
-
+from app.services.audit_service import publish_audit_event
 from app.services.customer_service import (
     create_customer,
     get_customer,
@@ -24,16 +25,34 @@ router = APIRouter(
     "",
     response_model=list[CustomerResponse],
 )
-async def get_customers():
+async def get_customers(
+    current_user: dict = Depends(get_current_user),
+):
 
     try:
-        return await list_customers()
+
+        customers = await list_customers()
+
+        publish_audit_event(
+            user_id=current_user["user_id"],
+            role=current_user["role"],
+            action="LIST_CUSTOMERS",
+            resource_type="customer",
+            result="SUCCESS",
+        )
+
+        return customers
 
     except Exception as exc:
+
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Customer Service unavailable: {exc}",
-        )
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
+            detail=(
+                f"Customer Service unavailable: {exc}"
+            ),
+        ) from exc
 
 
 @router.get(
@@ -42,12 +61,25 @@ async def get_customers():
 )
 async def get_customer_by_id(
     customer_id: UUID,
+    current_user: dict = Depends(get_current_user),
 ):
 
     try:
-        return await get_customer(
+
+        customer = await get_customer(
             str(customer_id)
         )
+
+        publish_audit_event(
+            user_id=current_user["user_id"],
+            role=current_user["role"],
+            action="GET_CUSTOMER",
+            resource_type="customer",
+            resource_id=str(customer_id),
+            result="SUCCESS",
+        )
+
+        return customer
 
     except Exception as exc:
 
@@ -56,12 +88,16 @@ async def get_customer_by_id(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Customer not found.",
-            )
+            ) from exc
 
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Customer Service unavailable: {exc}",
-        )
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
+            detail=(
+                f"Customer Service unavailable: {exc}"
+            ),
+        ) from exc
 
 
 @router.post(
@@ -71,15 +107,31 @@ async def get_customer_by_id(
 )
 async def create_customer_endpoint(
     customer_data: CustomerCreate,
+    current_user: dict = Depends(get_current_user),
 ):
 
     try:
 
-        return await create_customer(
+        customer = await create_customer(
             customer_data.model_dump(
                 mode="json"
             )
         )
+
+        publish_audit_event(
+            user_id=current_user["user_id"],
+            role=current_user["role"],
+            action="CREATE_CUSTOMER",
+            resource_type="customer",
+            resource_id=str(customer["id"]),
+            result="SUCCESS",
+            details={
+                "email": customer.get("email"),
+                "country": customer.get("country"),
+            },
+        )
+
+        return customer
 
     except Exception as exc:
 
@@ -87,10 +139,17 @@ async def create_customer_endpoint(
 
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="A customer with this email already exists.",
-            )
+                detail=(
+                    "A customer with this email "
+                    "already exists."
+                ),
+            ) from exc
 
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Customer Service unavailable: {exc}",
-        )
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
+            detail=(
+                f"Customer Service unavailable: {exc}"
+            ),
+        ) from exc

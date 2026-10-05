@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: finsightx
+spec:
+  type: ClusterIP
+  selector:
+    app: kafka
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: 9092
+      protocol: TCP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: finsightx
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: kafka
+
+  template:
+    metadata:
+      labels:
+        app: kafka
+
+    spec:
+      containers:
+        - name: kafka
+          image: apache/kafka:3.9.1
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: kafka
+              containerPort: 9092
+              protocol: TCP
+
+            - name: controller
+              containerPort: 9093
+              protocol: TCP
+
+          env:
+            # ------------------------------------------
+            # KRaft configuration
+            # ------------------------------------------
+
+            - name: KAFKA_NODE_ID
+              value: "1"
+
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+
+            # IMPORTANT:
+            # The single Kafka node acts as its own
+            # controller. Using localhost avoids the
+            # controller trying to reach itself through
+            # the Kubernetes ClusterIP.
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@localhost:9093"
+
+            # ------------------------------------------
+            # Kafka listeners
+            # ------------------------------------------
+
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+
+            # Other services inside Kubernetes connect
+            # using kafka:9092.
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://kafka:9092"
+
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+
+            # ------------------------------------------
+            # Kafka storage
+            # ------------------------------------------
+
+            - name: KAFKA_LOG_DIRS
+              value: "/var/lib/kafka/data"
+
+            # ------------------------------------------
+            # Single-node development configuration
+            # ------------------------------------------
+
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+
+            - name: KAFKA_NUM_PARTITIONS
+              value: "3"
+
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+
+          # Give Kafka enough time to start.
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+
+      # Development-only storage.
+      # Kafka data will disappear if the pod is recreated.
+      volumes:
+        - name: kafka-data
+          emptyDir: {}

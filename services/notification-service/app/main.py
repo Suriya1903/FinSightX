@@ -11,6 +11,8 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 
+logger = logging.getLogger("finsightx-notification")
+
 
 app = FastAPI(
     title="FinSightX Notification Service",
@@ -21,6 +23,9 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup() -> None:
+    logger.info(
+        "Starting FinSightX Notification Service..."
+    )
 
     consumer_thread = threading.Thread(
         target=consume_events,
@@ -29,6 +34,10 @@ async def startup() -> None:
     )
 
     consumer_thread.start()
+
+    logger.info(
+        "Notification Kafka consumer thread started."
+    )
 
 
 @app.get("/")
@@ -45,4 +54,14 @@ async def health():
     return {
         "service": "notification-service",
         "status": "healthy",
+    }
+
+
+@app.get("/ready")
+async def ready():
+    return {
+        "service": "notification-service",
+        "status": "ready",
+        "kafka_topic": "fraud.assessed",
+        "kafka_group": "finsightx-notification-service",
     }

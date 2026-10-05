@@ -1,206 +1,186 @@
+from __future__ import annotations
+
 import json
 import logging
-import os
 import threading
-import time
+from datetime import datetime, timezone
 
 from kafka import KafkaConsumer
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 
+from app.config import settings
 from app.database import SessionLocal
-from app.models import AuditEvent
+from app.models import AuditLog
+from app.schemas import AuditEvent
 
 
-logger = logging.getLogger("finsightx-audit")
+logger = logging.getLogger("finsightx.audit")
 
 
-KAFKA_BOOTSTRAP_SERVERS = os.getenv(
-    "KAFKA_BOOTSTRAP_SERVERS",
-    "kafka:9092",
-)
+class AuditConsumer:
+    def __init__(self) -> None:
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
 
-KAFKA_TOPIC = os.getenv(
-    "KAFKA_TOPIC",
-    "transaction.created",
-)
-
-KAFKA_GROUP_ID = os.getenv(
-    "KAFKA_GROUP_ID",
-    "finsightx-audit-service",
-)
-
-KAFKA_RETRY_DELAY_SECONDS = int(
-    os.getenv(
-        "KAFKA_RETRY_DELAY_SECONDS",
-        "5",
-    )
-)
-
-
-def process_event(event: dict) -> None:
-    event_id = event.get("event_id")
-    event_type = event.get("event_type")
-    transaction = event.get("transaction", {})
-
-    if not event_id:
-        logger.error(
-            "Event does not contain event_id."
-        )
-        return
-
-    if not transaction.get("id"):
-        logger.error(
-            "Event %s does not contain transaction.id.",
-            event_id,
-        )
-        return
-
-    db = SessionLocal()
-
-    try:
-        existing_event = (
-            db.query(AuditEvent)
-            .filter(
-                AuditEvent.event_id == event_id
-            )
-            .first()
-        )
-
-        if existing_event:
-            logger.info(
-                "Event %s already processed. Skipping.",
-                event_id,
-            )
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
             return
 
-        audit_event = AuditEvent(
-            event_id=event_id,
-            event_type=event_type or "UNKNOWN",
-            transaction_id=str(
-                transaction.get("id")
-            ),
-            customer_id=str(
-                transaction.get("customer_id")
-            ),
-            amount=str(
-                transaction.get("amount")
-            ),
-            currency=str(
-                transaction.get("currency")
-            ),
-            merchant_name=str(
-                transaction.get("merchant_name")
-            ),
-            payload=json.dumps(event),
+        self._stop_event.clear()
+
+        self._thread = threading.Thread(
+            target=self._consume,
+            name="audit-kafka-consumer",
+            daemon=True,
         )
 
-        db.add(audit_event)
-        db.commit()
+        self._thread.start()
 
         logger.info(
-            "AUDIT EVENT STORED | event_id=%s | transaction_id=%s",
-            event_id,
-            transaction.get("id"),
+            "Audit Kafka consumer thread started."
         )
 
-    except IntegrityError:
-        db.rollback()
+    def stop(self) -> None:
+        self._stop_event.set()
+
+        if self._thread:
+            self._thread.join(timeout=5)
 
         logger.info(
-            "Event %s already exists.",
-            event_id,
+            "Audit Kafka consumer stopped."
         )
 
-    except Exception:
-        db.rollback()
+    def _consume(self) -> None:
 
-        logger.exception(
-            "Failed to process event %s.",
-            event_id,
-        )
+        consumer: KafkaConsumer | None = None
 
-    finally:
-        db.close()
+        while not self._stop_event.is_set():
 
+            try:
 
-def create_consumer() -> KafkaConsumer:
-    logger.info(
-        "Connecting to Kafka | bootstrap_servers=%s",
-        KAFKA_BOOTSTRAP_SERVERS,
-    )
+                if consumer is None:
 
-    consumer = KafkaConsumer(
-        KAFKA_TOPIC,
-        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-        group_id=KAFKA_GROUP_ID,
-        auto_offset_reset="earliest",
-        enable_auto_commit=True,
-        value_deserializer=lambda value: json.loads(
-            value.decode("utf-8")
-        ),
-    )
+                    logger.info(
+                        "Connecting Audit Service to Kafka: %s",
+                        settings.KAFKA_BOOTSTRAP_SERVERS,
+                    )
 
-    logger.info(
-        "Connected to Kafka topic '%s' with group '%s'.",
-        KAFKA_TOPIC,
-        KAFKA_GROUP_ID,
-    )
+                    consumer = KafkaConsumer(
+                        settings.KAFKA_TOPIC,
+                        bootstrap_servers=(
+                            settings.KAFKA_BOOTSTRAP_SERVERS
+                        ),
+                        group_id=settings.KAFKA_GROUP_ID,
+                        auto_offset_reset="earliest",
+                        enable_auto_commit=False,
+                        value_deserializer=lambda value: (
+                            json.loads(
+                                value.decode("utf-8")
+                            )
+                        ),
+                    )
 
-    return consumer
+                    logger.info(
+                        "Audit Service subscribed to topic: %s",
+                        settings.KAFKA_TOPIC,
+                    )
 
-
-def consume_events() -> None:
-    logger.info(
-        "Starting resilient Kafka consumer..."
-    )
-
-    while True:
-        consumer = None
-
-        try:
-            consumer = create_consumer()
-
-            for message in consumer:
-                logger.info(
-                    "Received event | topic=%s | partition=%s | offset=%s",
-                    message.topic,
-                    message.partition,
-                    message.offset,
+                records = consumer.poll(
+                    timeout_ms=1000,
                 )
 
-                process_event(message.value)
+                for _, messages in records.items():
 
-        except Exception:
-            logger.exception(
-                "Kafka consumer failed. "
-                "Retrying in %s seconds...",
-                KAFKA_RETRY_DELAY_SECONDS,
+                    for message in messages:
+
+                        try:
+                            self._process_message(
+                                message.value
+                            )
+
+                            consumer.commit()
+
+                        except Exception:
+                            logger.exception(
+                                "Failed to process audit event."
+                            )
+
+            except Exception:
+                logger.exception(
+                    "Audit Kafka consumer error. Retrying."
+                )
+
+                if consumer is not None:
+
+                    try:
+                        consumer.close()
+                    except Exception:
+                        pass
+
+                    consumer = None
+
+                self._stop_event.wait(5)
+
+        if consumer is not None:
+
+            try:
+                consumer.close()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _process_message(
+        payload: dict,
+    ) -> None:
+
+        event = AuditEvent.model_validate(payload)
+
+        with SessionLocal() as db:
+
+            existing = db.scalar(
+                select(AuditLog).where(
+                    AuditLog.event_id
+                    == event.event_id
+                )
             )
 
-        finally:
-            if consumer is not None:
-                try:
-                    consumer.close()
-                    logger.info(
-                        "Kafka consumer connection closed."
-                    )
-                except Exception:
-                    logger.exception(
-                        "Error while closing Kafka consumer."
-                    )
+            if existing is not None:
 
-        time.sleep(
-            KAFKA_RETRY_DELAY_SECONDS
-        )
+                logger.info(
+                    "Audit event already processed: %s",
+                    event.event_id,
+                )
+
+                return
+
+            audit_log = AuditLog(
+                event_id=event.event_id,
+                user_id=event.user_id,
+                role=event.role,
+                action=event.action,
+                resource_type=event.resource_type,
+                resource_id=event.resource_id,
+                result=event.result,
+                details=event.details,
+                occurred_at=event.occurred_at,
+                created_at=datetime.now(timezone.utc),
+            )
+
+            db.add(audit_log)
+            db.commit()
+
+            logger.info(
+                "AUDIT EVENT STORED | event_id=%s "
+                "user_id=%s role=%s action=%s "
+                "resource=%s/%s result=%s",
+                event.event_id,
+                event.user_id,
+                event.role,
+                event.action,
+                event.resource_type,
+                event.resource_id,
+                event.result,
+            )
 
 
-def start_consumer_thread() -> threading.Thread:
-    thread = threading.Thread(
-        target=consume_events,
-        daemon=True,
-        name="kafka-consumer",
-    )
-
-    thread.start()
-
-    return thread
+audit_consumer = AuditConsumer()

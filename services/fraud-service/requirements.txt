@@ -4,3 +4,4 @@ kafka-python-ng
 redis
 psycopg[binary]
 httpx
+prometheus-client

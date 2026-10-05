@@ -3,13 +3,17 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 
 from kafka import KafkaConsumer
 
-from app.ml_client import (
-    calculate_time_features,
-    predict_fraud,
+from app.metrics import (
+    observe_fraud_processing_duration,
+    record_fraud_event_processed,
+    record_fraud_processing_failure,
+    record_ml_prediction_failure,
 )
+from app.ml_client import calculate_time_features, predict_fraud
 from app.publisher import publish_fraud_assessment
 from app.redis_client import (
     get_redis,
@@ -21,9 +25,7 @@ from app.rules import assess_transaction
 from app.velocity import record_transaction
 
 
-logger = logging.getLogger(
-    "finsightx-fraud"
-)
+logger = logging.getLogger("finsightx-fraud")
 
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv(
@@ -52,29 +54,25 @@ def process_event(
     Processing flow:
 
     1. Check idempotency.
-    2. Calculate Redis transaction velocity.
-    3. Run existing rule-based fraud engine.
-    4. Call ML fraud model.
-    5. Persist combined assessment.
-    6. Publish fraud.assessed.
-    7. Mark source event processed.
+    2. Calculate transaction velocity using Redis.
+    3. Run rule-based fraud detection.
+    4. Call the ML Service.
+    5. Persist fraud assessment in PostgreSQL.
+    6. Publish fraud.assessed to Kafka.
+    7. Mark the source event as processed.
     """
 
-    event_id = event.get(
-        "event_id"
-    )
+    event_id = event.get("event_id")
 
     if not event_id:
-        raise ValueError(
-            "Event does not contain event_id."
-        )
+        raise ValueError("Event does not contain event_id.")
 
-    if is_event_processed(
-        event_id
-    ):
+    # ---------------------------------------------------------
+    # Idempotency check.
+    # ---------------------------------------------------------
+    if is_event_processed(event_id):
         logger.info(
-            "IDEMPOTENCY | event_id=%s "
-            "already processed. Skipping.",
+            "IDEMPOTENCY | event_id=%s already processed. Skipping.",
             event_id,
         )
         return
@@ -84,13 +82,8 @@ def process_event(
         {},
     )
 
-    transaction_id = transaction.get(
-        "id"
-    )
-
-    customer_id = transaction.get(
-        "customer_id"
-    )
+    transaction_id = transaction.get("id")
+    customer_id = transaction.get("customer_id")
 
     amount = float(
         transaction.get(
@@ -100,19 +93,14 @@ def process_event(
     )
 
     if not transaction_id:
-        raise ValueError(
-            "Transaction ID is missing."
-        )
+        raise ValueError("Transaction ID is missing.")
 
     if not customer_id:
-        raise ValueError(
-            "Customer ID is missing."
-        )
+        raise ValueError("Customer ID is missing.")
 
     # ---------------------------------------------------------
-    # Redis velocity
+    # Redis velocity tracking.
     # ---------------------------------------------------------
-
     velocity = record_transaction(
         redis_client=redis_client,
         customer_id=customer_id,
@@ -121,17 +109,15 @@ def process_event(
     )
 
     logger.info(
-        "VELOCITY | customer_id=%s | "
-        "transactions=%s | total_amount=%s",
+        "VELOCITY | customer_id=%s | transactions=%s | total_amount=%s",
         customer_id,
         velocity["transaction_count"],
         velocity["total_amount"],
     )
 
     # ---------------------------------------------------------
-    # Existing rule-based fraud engine
+    # Rule-based fraud assessment.
     # ---------------------------------------------------------
-
     rule_assessment = assess_transaction(
         amount=amount,
         merchant_category=transaction.get(
@@ -152,17 +138,15 @@ def process_event(
     )
 
     logger.info(
-        "RULE ASSESSMENT | transaction_id=%s | "
-        "risk=%s | score=%s",
+        "RULE ASSESSMENT | transaction_id=%s | risk=%s | score=%s",
         transaction_id,
         rule_assessment.risk_level,
         rule_assessment.risk_score,
     )
 
     # ---------------------------------------------------------
-    # ML feature construction
+    # Time features for ML.
     # ---------------------------------------------------------
-
     (
         transaction_hour,
         transaction_day_of_week,
@@ -177,9 +161,8 @@ def process_event(
     )
 
     # ---------------------------------------------------------
-    # ML prediction
+    # Machine-learning prediction.
     # ---------------------------------------------------------
-
     try:
         ml_assessment = predict_fraud(
             amount=amount,
@@ -212,9 +195,10 @@ def process_event(
         )
 
     except Exception as exc:
+        record_ml_prediction_failure()
+
         logger.exception(
-            "ML prediction failed | "
-            "transaction_id=%s",
+            "ML prediction failed | transaction_id=%s",
             transaction_id,
         )
 
@@ -223,8 +207,8 @@ def process_event(
         ) from exc
 
     logger.info(
-        "ML ASSESSMENT | transaction_id=%s | "
-        "prediction=%s | probability=%.6f | risk=%s",
+        "ML ASSESSMENT | transaction_id=%s | prediction=%s | "
+        "probability=%.6f | risk=%s",
         transaction_id,
         ml_assessment["prediction"],
         ml_assessment["fraud_probability"],
@@ -232,22 +216,15 @@ def process_event(
     )
 
     # ---------------------------------------------------------
-    # Combined assessment
-    #
-    # The existing rule engine remains authoritative for the
-    # stored rule-based risk score.
-    #
-    # ML output is persisted alongside it as additional evidence.
+    # Combine rule + ML reasons.
     # ---------------------------------------------------------
-
     reasons = list(
         rule_assessment.reasons
     )
 
     reasons.append(
         "ML model prediction: "
-        f"{ml_assessment['prediction']} "
-        f"with fraud probability "
+        f"{ml_assessment['prediction']} with fraud probability "
         f"{ml_assessment['fraud_probability']:.2%}."
     )
 
@@ -258,6 +235,9 @@ def process_event(
         f"{ml_assessment['model_version']})."
     )
 
+    # ---------------------------------------------------------
+    # Persist and publish fraud assessment.
+    # ---------------------------------------------------------
     publish_fraud_assessment(
         event=event,
         risk_level=rule_assessment.risk_level,
@@ -267,23 +247,19 @@ def process_event(
     )
 
     # ---------------------------------------------------------
-    # Idempotency
+    # Mark event as successfully processed.
     # ---------------------------------------------------------
-
-    mark_event_processed(
-        event_id
-    )
+    mark_event_processed(event_id)
 
     logger.info(
-        "IDEMPOTENCY | event_id=%s "
-        "marked as processed.",
+        "IDEMPOTENCY | event_id=%s marked as processed.",
         event_id,
     )
 
 
 def consume_events() -> None:
     """
-    Continuously consume transaction.created events.
+    Start the Kafka consumer and process transaction events.
     """
 
     logger.info(
@@ -296,15 +272,13 @@ def consume_events() -> None:
         group_id=KAFKA_GROUP_ID,
         auto_offset_reset="earliest",
         enable_auto_commit=True,
-        value_deserializer=lambda value:
-            json.loads(
-                value.decode("utf-8")
-            ),
+        value_deserializer=lambda value: json.loads(
+            value.decode("utf-8")
+        ),
     )
 
     logger.info(
-        "Connected to Kafka topic '%s' "
-        "with group '%s'.",
+        "Connected to Kafka topic '%s' with group '%s'.",
         KAFKA_TOPIC,
         KAFKA_GROUP_ID,
     )
@@ -328,8 +302,7 @@ def consume_events() -> None:
         event = message.value
 
         logger.info(
-            "Received transaction event | "
-            "partition=%s | offset=%s",
+            "Received transaction event | partition=%s | offset=%s",
             message.partition,
             message.offset,
         )
@@ -339,6 +312,8 @@ def consume_events() -> None:
             "unknown",
         )
 
+        start_time = time.perf_counter()
+
         success = process_with_retry(
             event=event,
             processor=lambda: process_event(
@@ -347,16 +322,35 @@ def consume_events() -> None:
             ),
         )
 
+        duration_seconds = (
+            time.perf_counter()
+            - start_time
+        )
+
+        observe_fraud_processing_duration(
+            duration_seconds
+        )
+
         if success:
+
+            record_fraud_event_processed(
+                status="success"
+            )
+
             logger.info(
-                "EVENT PIPELINE SUCCESS | "
-                "event_id=%s",
+                "EVENT PIPELINE SUCCESS | event_id=%s",
                 event_id,
             )
 
         else:
+
+            record_fraud_event_processed(
+                status="failed"
+            )
+
+            record_fraud_processing_failure()
+
             logger.error(
-                "EVENT PIPELINE FAILED | "
-                "event_id=%s | sent to DLQ",
+                "EVENT PIPELINE FAILED | event_id=%s | sent to DLQ",
                 event_id,
             )

@@ -1,0 +1,919 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: api-gateway
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.apiGateway }}
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: "{{ .Values.images.apiGateway.repository }}:{{ .Values.images.apiGateway.tag }}"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: APP_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: APP_NAME
+            - name: APP_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: APP_ENV
+            - name: DATABASE_URL
+              value: {{ .Values.global.postgres.apiUrl | quote }}
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: REDIS_PORT
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: CUSTOMER_SERVICE_URL
+              value: "http://customer-service:8009"
+            - name: TRANSACTION_SERVICE_URL
+              value: "http://transaction-service:8010"
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:8001"
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: finsightx-secrets
+                  key: JWT_SECRET_KEY
+            - name: JWT_ALGORITHM
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: JWT_ALGORITHM
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources.default | nindent 12 }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-service
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: audit-service
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.auditService }}
+  selector:
+    matchLabels:
+      app: audit-service
+  template:
+    metadata:
+      labels:
+        app: audit-service
+    spec:
+      containers:
+        - name: audit-service
+          image: "{{ .Values.images.auditService.repository }}:{{ .Values.images.auditService.tag }}"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8006
+              protocol: TCP
+          env:
+            - name: APP_NAME
+              value: "FinSightX Audit Service"
+            - name: DATABASE_URL
+              value: {{ .Values.global.postgres.apiUrl | quote }}
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka:9092"
+            - name: KAFKA_TOPIC
+              value: "transaction.created"
+            - name: KAFKA_GROUP_ID
+              value: "finsightx-audit-service"
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: finsightx-secrets
+                  key: JWT_SECRET_KEY
+            - name: JWT_ALGORITHM
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: JWT_ALGORITHM
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8006
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8006
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources.default | nindent 12 }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: auth-service
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.authService }}
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: auth-service
+          image: "{{ .Values.images.authService.repository }}:{{ .Values.images.authService.tag }}"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8001
+              protocol: TCP
+          env:
+            - name: APP_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: APP_NAME
+            - name: DATABASE_URL
+              value: {{ .Values.global.postgres.apiUrl | quote }}
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: finsightx-secrets
+                  key: JWT_SECRET_KEY
+            - name: JWT_ALGORITHM
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: JWT_ALGORITHM
+            - name: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources.default | nindent 12 }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: customer-service
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: customer-service
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.customerService }}
+  selector:
+    matchLabels:
+      app: customer-service
+  template:
+    metadata:
+      labels:
+        app: customer-service
+    spec:
+      containers:
+        - name: customer-service
+          image: "{{ .Values.images.customerService.repository }}:{{ .Values.images.customerService.tag }}"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8009
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              value: {{ .Values.global.postgres.apiUrl | quote }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8009
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8009
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources.default | nindent 12 }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-service
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: fraud-service
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.fraudService }}
+  selector:
+    matchLabels:
+      app: fraud-service
+  template:
+    metadata:
+      labels:
+        app: fraud-service
+    spec:
+      containers:
+        - name: fraud-service
+          image: "{{ .Values.images.fraudService.repository }}:{{ .Values.images.fraudService.tag }}"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8004
+              protocol: TCP
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_TOPIC
+              value: "transaction.created"
+            - name: KAFKA_GROUP_ID
+              value: "finsightx-fraud-service"
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: REDIS_PORT
+            - name: DATABASE_URL
+              value: {{ .Values.global.postgres.fraudUrl | quote }}
+            - name: ML_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: ML_SERVICE_URL
+            - name: ML_PREDICT_TIMEOUT_SECONDS
+              value: "10"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8004
+            initialDelaySeconds: 40
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8004
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources.fraudService | nindent 12 }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: notification-service
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.notificationService }}
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+    spec:
+      containers:
+        - name: notification-service
+          image: "{{ .Values.images.notificationService.repository }}:{{ .Values.images.notificationService.tag }}"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8005
+              protocol: TCP
+          env:
+            - name: APP_NAME
+              value: "FinSightX Notification Service"
+            - name: DATABASE_URL
+              value: {{ .Values.global.postgres.apiUrl | quote }}
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka:9092"
+            - name: KAFKA_TOPIC
+              value: "fraud.assessed"
+            - name: KAFKA_GROUP_ID
+              value: "finsightx-notification-service"
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: finsightx-secrets
+                  key: JWT_SECRET_KEY
+            - name: JWT_ALGORITHM
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: JWT_ALGORITHM
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8005
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8005
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources.default | nindent 12 }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-service
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: ml-service
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.mlService }}
+  selector:
+    matchLabels:
+      app: ml-service
+  template:
+    metadata:
+      labels:
+        app: ml-service
+    spec:
+      containers:
+        - name: ml-service
+          image: "{{ .Values.images.mlService.repository }}:{{ .Values.images.mlService.tag }}"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8008
+              protocol: TCP
+          env:
+            - name: MODEL_PATH
+              value: "/app/models/fraud_random_forest.joblib"
+            - name: MODEL_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: MODEL_VERSION
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8008
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8008
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources.mlService | nindent 12 }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transaction-service
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: transaction-service
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.transactionService }}
+  selector:
+    matchLabels:
+      app: transaction-service
+  template:
+    metadata:
+      labels:
+        app: transaction-service
+    spec:
+      containers:
+        - name: transaction-service
+          image: "{{ .Values.images.transactionService.repository }}:{{ .Values.images.transactionService.tag }}"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8010
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              value: {{ .Values.global.postgres.apiUrl | quote }}
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8010
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8010
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources.default | nindent 12 }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: postgres
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.postgres }}
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: "{{ .Values.images.postgres.repository }}:{{ .Values.images.postgres.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: finsightx-secrets
+                  key: POSTGRES_PASSWORD
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql
+          resources:
+            {{- toYaml .Values.resources.postgres | nindent 12 }}
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: redis
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.redis }}
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: "{{ .Values.images.redis.repository }}:{{ .Values.images.redis.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 6379
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources.redis | nindent 12 }}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: kafka
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.kafka }}
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+        - name: kafka
+          image: "{{ .Values.images.kafka.repository }}:{{ .Values.images.kafka.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: kafka
+              containerPort: 9092
+              protocol: TCP
+            - name: controller
+              containerPort: 9093
+              protocol: TCP
+          env:
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@localhost:9093"
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://kafka:9092"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            - name: KAFKA_LOG_DIRS
+              value: "/var/lib/kafka/data"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+            - name: KAFKA_NUM_PARTITIONS
+              value: "3"
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+          resources:
+            {{- toYaml .Values.resources.kafka | nindent 12 }}
+      volumes:
+        - name: kafka-data
+          emptyDir: {}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: minio
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.minio }}
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: "{{ .Values.images.minio.repository }}:{{ .Values.images.minio.tag }}"
+          imagePullPolicy: Never
+          command:
+            - /bin/sh
+            - -c
+            - minio server /data --console-address ":9001"
+          ports:
+            - name: api
+              containerPort: 9000
+              protocol: TCP
+            - name: console
+              containerPort: 9001
+              protocol: TCP
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: finsightx-secrets
+                  key: MINIO_ROOT_USER
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: finsightx-secrets
+                  key: MINIO_ROOT_PASSWORD
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: minio-storage
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.resources.minio | nindent 12 }}
+      volumes:
+        - name: minio-storage
+          persistentVolumeClaim:
+            claimName: minio-pvc
+
+---
+{{- if .Values.monitoring.prometheus.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: prometheus
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.prometheus }}
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: "{{ .Values.images.prometheus.repository }}:{{ .Values.images.prometheus.tag }}"
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --web.enable-lifecycle
+          ports:
+            - name: http
+              containerPort: 9090
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+          resources:
+            {{- toYaml .Values.resources.prometheus | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          emptyDir: {}
+{{- end }}
+
+---
+{{- if .Values.monitoring.grafana.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app: grafana
+    {{- include "finsightx.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.grafana }}
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: "{{ .Values.images.grafana.repository }}:{{ .Values.images.grafana.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin"
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+          resources:
+            {{- toYaml .Values.resources.grafana | nindent 12 }}
+      volumes:
+        - name: grafana-storage
+          emptyDir: {}
+{{- end }}

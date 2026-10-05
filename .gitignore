@@ -141,3 +141,19 @@ data/warehouse/*
 
 # MLflow local tracking artifacts
 mlruns/
+
+# Kubernetes secrets
+infrastructure/kubernetes/base/secret.yaml
+
+# Local test payloads
+customer-test.json
+transaction-test.json
+
+# Local container image archives
+*.tar
+
+# Generated Helm/live Kubernetes exports
+infrastructure/helm/*-live.yaml
+infrastructure/helm/live-helm-source.txt
+infrastructure/helm/rendered-current.yaml
+infrastructure/helm/rendered-final.yaml

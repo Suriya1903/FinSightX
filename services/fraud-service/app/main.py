@@ -2,6 +2,8 @@ import logging
 import threading
 
 from fastapi import FastAPI
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from starlette.responses import Response
 
 from app.consumer import consume_events
 from app.database import ensure_ml_columns
@@ -22,7 +24,7 @@ app = FastAPI(
         "Real-time rule-based and machine-learning "
         "fraud detection service for FinSightX."
     ),
-    version="0.3.0",
+    version="0.4.0",
 )
 
 
@@ -45,12 +47,13 @@ async def root():
     return {
         "service": "fraud-service",
         "status": "running",
-        "version": "0.3.0",
+        "version": "0.4.0",
         "capabilities": [
             "rule-based-fraud-detection",
             "redis-velocity",
             "ml-fraud-prediction",
             "kafka-event-processing",
+            "prometheus-metrics",
         ],
     }
 
@@ -61,3 +64,11 @@ async def health():
         "service": "fraud-service",
         "status": "healthy",
     }
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )

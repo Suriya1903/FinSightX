@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: finsightx
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: api-gateway
+
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+
+    spec:
+      containers:
+        - name: api-gateway
+
+          image: finsightx/api-gateway:k8s
+          imagePullPolicy: Never
+
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          env:
+            - name: APP_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: APP_NAME
+
+            - name: APP_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: APP_ENV
+
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx"
+
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: REDIS_HOST
+
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: REDIS_PORT
+
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+
+            - name: CUSTOMER_SERVICE_URL
+              value: "http://customer-service:8009"
+
+            - name: TRANSACTION_SERVICE_URL
+              value: "http://transaction-service:8010"
+
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:8001"
+
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: finsightx-secrets
+                  key: JWT_SECRET_KEY
+
+            - name: JWT_ALGORITHM
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: JWT_ALGORITHM
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: finsightx
+
+spec:
+  type: NodePort
+
+  selector:
+    app: api-gateway
+
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      nodePort: 30080
+      protocol: TCP

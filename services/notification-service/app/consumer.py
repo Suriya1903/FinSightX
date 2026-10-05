@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -27,7 +29,6 @@ KAFKA_GROUP_ID = os.getenv(
 
 
 def consume_events() -> None:
-
     logger.info(
         "Starting notification Kafka consumer..."
     )
@@ -50,61 +51,67 @@ def consume_events() -> None:
     )
 
     for message in consumer:
+        try:
+            event = message.value
 
-        event = message.value
-
-        logger.info(
-            "Received fraud assessment | partition=%s | offset=%s",
-            message.partition,
-            message.offset,
-        )
-
-        transaction = event.get(
-            "transaction",
-            {},
-        )
-
-        assessment = event.get(
-            "fraud_assessment",
-            {},
-        )
-
-        transaction_id = transaction.get(
-            "id",
-            "unknown",
-        )
-
-        customer_id = transaction.get(
-            "customer_id",
-            "unknown",
-        )
-
-        risk_level = assessment.get(
-            "risk_level",
-            "UNKNOWN",
-        )
-
-        risk_score = int(
-            assessment.get(
-                "risk_score",
-                0,
+            logger.info(
+                "Received fraud assessment | "
+                "partition=%s | offset=%s",
+                message.partition,
+                message.offset,
             )
-        )
 
-        reasons = assessment.get(
-            "reasons",
-            [],
-        )
+            transaction = event.get(
+                "transaction",
+                {},
+            )
 
-        notification = generate_notification(
-            transaction_id=transaction_id,
-            customer_id=customer_id,
-            risk_level=risk_level,
-            risk_score=risk_score,
-            reasons=reasons,
-        )
+            assessment = event.get(
+                "fraud_assessment",
+                {},
+            )
 
-        logger.info(
-            "NOTIFICATION READY | %s",
-            json.dumps(notification),
-        )
+            transaction_id = transaction.get(
+                "id",
+                "unknown",
+            )
+
+            customer_id = transaction.get(
+                "customer_id",
+                "unknown",
+            )
+
+            risk_level = assessment.get(
+                "risk_level",
+                "UNKNOWN",
+            )
+
+            risk_score = int(
+                assessment.get(
+                    "risk_score",
+                    0,
+                )
+            )
+
+            reasons = assessment.get(
+                "reasons",
+                [],
+            )
+
+            notification = generate_notification(
+                transaction_id=transaction_id,
+                customer_id=customer_id,
+                risk_level=risk_level,
+                risk_score=risk_score,
+                reasons=reasons,
+            )
+
+            logger.info(
+                "NOTIFICATION READY | %s",
+                json.dumps(notification),
+            )
+
+        except Exception:
+            logger.exception(
+                "Failed to process fraud assessment event."
+            )

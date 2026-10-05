@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-service
+  namespace: finsightx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: audit-service
+  template:
+    metadata:
+      labels:
+        app: audit-service
+    spec:
+      containers:
+        - name: audit-service
+          image: finsightx/audit-service:k8s
+          imagePullPolicy: Never
+
+          ports:
+            - name: http
+              containerPort: 8006
+              protocol: TCP
+
+          env:
+            - name: APP_NAME
+              value: "FinSightX Audit Service"
+
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx"
+
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka:9092"
+
+            - name: KAFKA_TOPIC
+              value: "audit.events"
+
+            - name: KAFKA_GROUP_ID
+              value: "finsightx-audit-service"
+
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: finsightx-secrets
+                  key: JWT_SECRET_KEY
+
+            - name: JWT_ALGORITHM
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: JWT_ALGORITHM
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8006
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8006
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-service
+  namespace: finsightx
+spec:
+  type: ClusterIP
+  selector:
+    app: audit-service
+  ports:
+    - name: http
+      port: 8006
+      targetPort: 8006
+      protocol: TCP

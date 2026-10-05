@@ -7,17 +7,24 @@ services:
   api-gateway:
     build:
       context: ./services/api-gateway
+
     container_name: finsightx-api-gateway
     restart: unless-stopped
 
     environment:
       DATABASE_URL: postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx
+
       REDIS_HOST: redis
       REDIS_PORT: 6379
+
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
 
       CUSTOMER_SERVICE_URL: http://customer-service:8009
       TRANSACTION_SERVICE_URL: http://transaction-service:8010
+      AUTH_SERVICE_URL: http://auth-service:8001
+
+      JWT_SECRET_KEY: change_me
+      JWT_ALGORITHM: HS256
 
     ports:
       - "8002:8000"
@@ -25,12 +32,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
       redis:
         condition: service_healthy
+
       kafka:
         condition: service_started
+
+      auth-service:
+        condition: service_healthy
+
       customer-service:
         condition: service_healthy
+
       transaction-service:
         condition: service_healthy
 
@@ -49,12 +63,54 @@ services:
 
 
   # ==========================================================
+  # AUTH SERVICE
+  # ==========================================================
+
+  auth-service:
+    build:
+      context: ./services/auth-service
+
+    container_name: finsightx-auth-service
+    restart: unless-stopped
+
+    environment:
+      APP_NAME: FinSightX Auth Service
+
+      DATABASE_URL: postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx
+
+      JWT_SECRET_KEY: change_me
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 30
+
+    ports:
+      - "8001:8001"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+
+  # ==========================================================
   # CUSTOMER SERVICE
   # ==========================================================
 
   customer-service:
     build:
       context: ./services/customer-service
+
     container_name: finsightx-customer-service
     restart: unless-stopped
 
@@ -89,11 +145,13 @@ services:
   transaction-service:
     build:
       context: ./services/transaction-service
+
     container_name: finsightx-transaction-service
     restart: unless-stopped
 
     environment:
       DATABASE_URL: postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx
+
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
 
     ports:
@@ -102,6 +160,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
       kafka:
         condition: service_started
 
@@ -121,19 +180,37 @@ services:
 
   # ==========================================================
   # AUDIT SERVICE
+  #
+  # API Gateway
+  #      |
+  #      v
+  # audit.events
+  #      |
+  #      v
+  # Audit Service
+  #      |
+  #      v
+  # PostgreSQL
   # ==========================================================
 
   audit-service:
     build:
       context: ./services/audit-service
+
     container_name: finsightx-audit-service
     restart: unless-stopped
 
     environment:
+      APP_NAME: FinSightX Audit Service
+
       DATABASE_URL: postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx
+
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: transaction.created
+      KAFKA_TOPIC: audit.events
       KAFKA_GROUP_ID: finsightx-audit-service
+
+      JWT_SECRET_KEY: change_me
+      JWT_ALGORITHM: HS256
 
     ports:
       - "8006:8006"
@@ -141,6 +218,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
       kafka:
         condition: service_started
 
@@ -253,6 +331,7 @@ services:
   notification-service:
     build:
       context: ./services/notification-service
+
     container_name: finsightx-notification-service
     restart: unless-stopped
 
@@ -351,6 +430,7 @@ services:
 
   minio:
     image: quay.io/minio/minio:latest
+
     container_name: finsightx-minio
     restart: unless-stopped
 
@@ -391,6 +471,7 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg18
+
     container_name: finsightx-postgres
     restart: unless-stopped
 
@@ -422,6 +503,7 @@ services:
 
   redis:
     image: redis:7-alpine
+
     container_name: finsightx-redis
     restart: unless-stopped
 
@@ -454,6 +536,7 @@ services:
 
   kafka:
     image: apache/kafka:4.0.0
+
     container_name: finsightx-kafka
     restart: unless-stopped
 
@@ -461,7 +544,9 @@ services:
       - "29092:29092"
 
     environment:
+
       KAFKA_NODE_ID: 1
+
       KAFKA_PROCESS_ROLES: broker,controller
 
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092

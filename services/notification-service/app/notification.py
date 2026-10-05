@@ -12,19 +12,21 @@ def generate_notification(
     reasons: list[str],
 ) -> dict:
 
-    if risk_level == "HIGH":
+    normalized_risk_level = risk_level.upper()
+
+    if normalized_risk_level == "HIGH":
         notification_type = "HIGH_RISK_ALERT"
         priority = "URGENT"
         message = (
-            f"High-risk transaction detected. "
+            "High-risk transaction detected. "
             f"Transaction ID: {transaction_id}"
         )
 
-    elif risk_level == "MEDIUM":
+    elif normalized_risk_level == "MEDIUM":
         notification_type = "FRAUD_REVIEW_ALERT"
         priority = "HIGH"
         message = (
-            f"Transaction requires fraud review. "
+            "Transaction requires fraud review. "
             f"Transaction ID: {transaction_id}"
         )
 
@@ -32,7 +34,7 @@ def generate_notification(
         notification_type = "TRANSACTION_NOTIFICATION"
         priority = "NORMAL"
         message = (
-            f"Transaction completed risk assessment. "
+            "Transaction completed risk assessment. "
             f"Transaction ID: {transaction_id}"
         )
 
@@ -41,14 +43,17 @@ def generate_notification(
         "customer_id": customer_id,
         "notification_type": notification_type,
         "priority": priority,
-        "risk_level": risk_level,
+        "risk_level": normalized_risk_level,
         "risk_score": risk_score,
         "message": message,
         "reasons": reasons,
     }
 
     logger.info(
-        "NOTIFICATION GENERATED | type=%s | priority=%s | transaction_id=%s",
+        "NOTIFICATION GENERATED | "
+        "type=%s | "
+        "priority=%s | "
+        "transaction_id=%s",
         notification_type,
         priority,
         transaction_id,

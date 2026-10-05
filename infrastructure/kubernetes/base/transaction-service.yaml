@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transaction-service
+  namespace: finsightx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transaction-service
+  template:
+    metadata:
+      labels:
+        app: transaction-service
+    spec:
+      containers:
+        - name: transaction-service
+          image: finsightx/transaction-service:k8s
+          imagePullPolicy: Never
+
+          ports:
+            - name: http
+              containerPort: 8010
+              protocol: TCP
+
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx"
+
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: finsightx-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8010
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8010
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transaction-service
+  namespace: finsightx
+spec:
+  type: ClusterIP
+  selector:
+    app: transaction-service
+  ports:
+    - name: http
+      port: 8010
+      targetPort: 8010
+      protocol: TCP

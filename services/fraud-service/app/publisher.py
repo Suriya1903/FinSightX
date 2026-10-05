@@ -6,6 +6,10 @@ from datetime import datetime, timezone
 from kafka import KafkaProducer
 
 from app.database import save_fraud_assessment
+from app.metrics import (
+    record_fraud_assessment,
+    record_ml_prediction,
+)
 
 
 logger = logging.getLogger(
@@ -23,8 +27,9 @@ FRAUD_ASSESSED_TOPIC = "fraud.assessed"
 
 producer = KafkaProducer(
     bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-    value_serializer=lambda value:
-        json.dumps(value).encode("utf-8"),
+    value_serializer=lambda value: json.dumps(
+        value
+    ).encode("utf-8"),
 )
 
 
@@ -35,17 +40,12 @@ def publish_fraud_assessment(
     reasons: list[str],
     ml_assessment: dict,
 ) -> None:
-    """
-    Persist the combined fraud assessment and publish
-    fraud.assessed to Kafka.
-    """
 
     transaction = event["transaction"]
 
     # ---------------------------------------------------------
-    # PostgreSQL
+    # Persist assessment.
     # ---------------------------------------------------------
-
     save_fraud_assessment(
         event=event,
         risk_level=risk_level,
@@ -54,10 +54,24 @@ def publish_fraud_assessment(
         ml_assessment=ml_assessment,
     )
 
+    # ---------------------------------------------------------
+    # Record Prometheus metrics.
+    # ---------------------------------------------------------
+    record_fraud_assessment(
+        risk_level=risk_level
+    )
+
+    record_ml_prediction(
+        prediction=ml_assessment["prediction"],
+        risk_level=ml_assessment["risk_level"],
+    )
+
     logger.info(
         "FRAUD ASSESSMENT STORED | "
-        "transaction_id=%s | rule_risk=%s | "
-        "rule_score=%s | ml_prediction=%s | "
+        "transaction_id=%s | "
+        "rule_risk=%s | "
+        "rule_score=%s | "
+        "ml_prediction=%s | "
         "ml_probability=%.6f",
         transaction["id"],
         risk_level,
@@ -67,9 +81,8 @@ def publish_fraud_assessment(
     )
 
     # ---------------------------------------------------------
-    # Kafka event
+    # Build fraud.assessed event.
     # ---------------------------------------------------------
-
     fraud_event = {
         "event_type": "fraud.assessed",
         "event_version": "2.0",
@@ -77,13 +90,16 @@ def publish_fraud_assessment(
         "occurred_at": datetime.now(
             timezone.utc
         ).isoformat(),
-
         "transaction": {
             "id": transaction["id"],
-            "customer_id": transaction["customer_id"],
+            "customer_id": transaction[
+                "customer_id"
+            ],
             "amount": transaction["amount"],
             "currency": transaction["currency"],
-            "merchant_name": transaction["merchant_name"],
+            "merchant_name": transaction[
+                "merchant_name"
+            ],
             "merchant_category": transaction.get(
                 "merchant_category"
             ),
@@ -98,17 +114,14 @@ def publish_fraud_assessment(
                 "PENDING",
             ),
         },
-
         "fraud_assessment": {
             "risk_level": risk_level,
             "risk_score": risk_score,
             "reasons": reasons,
-
             "rule_based": {
                 "risk_level": risk_level,
                 "risk_score": risk_score,
             },
-
             "machine_learning": {
                 "model_name": ml_assessment[
                     "model_name"
@@ -122,10 +135,9 @@ def publish_fraud_assessment(
                 "fraud_probability": ml_assessment[
                     "fraud_probability"
                 ],
-                "legitimate_probability":
-                    ml_assessment[
-                        "legitimate_probability"
-                    ],
+                "legitimate_probability": ml_assessment[
+                    "legitimate_probability"
+                ],
                 "risk_level": ml_assessment[
                     "risk_level"
                 ],
@@ -137,10 +149,10 @@ def publish_fraud_assessment(
     }
 
     # ---------------------------------------------------------
-    # Publish
+    # Publish fraud.assessed.
     # ---------------------------------------------------------
-
     try:
+
         future = producer.send(
             FRAUD_ASSESSED_TOPIC,
             key=transaction[
@@ -157,8 +169,11 @@ def publish_fraud_assessment(
 
         logger.info(
             "FRAUD EVENT PUBLISHED | "
-            "topic=%s | partition=%s | offset=%s | "
-            "transaction_id=%s | rule_risk=%s | "
+            "topic=%s | "
+            "partition=%s | "
+            "offset=%s | "
+            "transaction_id=%s | "
+            "rule_risk=%s | "
             "ml_prediction=%s",
             metadata.topic,
             metadata.partition,
@@ -169,6 +184,7 @@ def publish_fraud_assessment(
         )
 
     except Exception:
+
         logger.exception(
             "FAILED TO PUBLISH FRAUD EVENT | "
             "transaction_id=%s",

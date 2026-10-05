@@ -1,0 +1,19 @@
+apiVersion: v2
+name: finsightx
+description: Helm chart for the FinSightX distributed financial intelligence, risk and fraud detection platform
+type: application
+
+version: 0.1.0
+appVersion: "1.0.0"
+
+keywords:
+  - fintech
+  - fraud-detection
+  - microservices
+  - kafka
+  - machine-learning
+  - kubernetes
+  - observability
+
+maintainers:
+  - name: Suriya MG

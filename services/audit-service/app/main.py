@@ -1,60 +1,85 @@
-import logging
+from __future__ import annotations
 
-from fastapi import FastAPI
-from sqlalchemy import text
+from contextlib import asynccontextmanager
+from typing import Annotated
 
-from app.consumer import start_consumer_thread
-from app.database import Base, engine
-from app.models import AuditEvent
+from fastapi import Depends, FastAPI, Query
+from sqlalchemy import desc, select
 
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
-
-
-app = FastAPI(
-    title="FinSightX Audit Service",
-    description="Kafka-powered audit service for FinSightX.",
-    version="0.1.0",
-)
+from app.config import settings
+from app.consumer import audit_consumer
+from app.database import Base, SessionLocal, engine
+from app.models import AuditLog
+from app.schemas import AuditLogResponse
+from app.security import require_admin
 
 
-@app.on_event("startup")
-async def startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
     Base.metadata.create_all(
         bind=engine
     )
 
-    start_consumer_thread()
+    audit_consumer.start()
+
+    yield
+
+    audit_consumer.stop()
 
 
-@app.get("/")
-async def root():
-    return {
-        "service": "audit-service",
-        "status": "running",
-        "version": "0.1.0",
-    }
+app = FastAPI(
+    title=settings.APP_NAME,
+    description=(
+        "Event-driven audit service for FinSightX."
+    ),
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
 
 @app.get("/health")
 async def health():
-    try:
-        with engine.connect() as connection:
-            connection.execute(
-                text("SELECT 1")
+    return {
+        "service": "audit-service",
+        "status": "healthy",
+    }
+
+
+@app.get("/ready")
+async def ready():
+    return {
+        "service": "audit-service",
+        "status": "ready",
+        "kafka_topic": settings.KAFKA_TOPIC,
+    }
+
+
+@app.get("/api/v1/audit", response_model=list[AuditLogResponse])
+async def list_audit_logs(
+    _admin_user: Annotated[
+        dict,
+        Depends(require_admin),
+    ],
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=500,
+    ),
+):
+
+    with SessionLocal() as db:
+
+        statement = (
+            select(AuditLog)
+            .order_by(
+                desc(AuditLog.occurred_at)
             )
+            .limit(limit)
+        )
 
-        return {
-            "service": "audit-service",
-            "status": "healthy",
-        }
+        records = db.scalars(
+            statement
+        ).all()
 
-    except Exception as exc:
-        return {
-            "service": "audit-service",
-            "status": "unhealthy",
-            "error": str(exc),
-        }
+        return list(records)

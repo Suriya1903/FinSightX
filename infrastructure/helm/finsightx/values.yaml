@@ -1,0 +1,245 @@
+namespace:
+  create: false
+  name: finsightx
+
+global:
+  imagePullPolicy: Never
+
+  postgres:
+    host: postgres
+    port: "5432"
+    database: finsightx
+    username: finsightx
+    password: change_me
+    apiUrl: postgresql+psycopg://finsightx:change_me@postgres:5432/finsightx
+    fraudUrl: postgresql://finsightx:change_me@postgres:5432/finsightx
+
+  redis:
+    host: redis
+    port: "6379"
+
+  kafka:
+    bootstrapServers: kafka:9092
+
+  minio:
+    endpoint: minio:9000
+    accessKey: minioadmin
+    secretKey: change_me
+    bucket: finsightx-data
+
+  jwt:
+    secretKey: change_me
+    algorithm: HS256
+    accessTokenExpireMinutes: "30"
+
+  ml:
+    serviceUrl: http://ml-service:8008
+    modelVersion: "7D"
+
+images:
+  apiGateway:
+    repository: finsightx/api-gateway
+    tag: k8s
+
+  authService:
+    repository: finsightx/auth-service
+    tag: k8s
+
+  customerService:
+    repository: finsightx/customer-service
+    tag: k8s
+
+  transactionService:
+    repository: finsightx/transaction-service
+    tag: k8s
+
+  fraudService:
+    repository: finsightx/fraud-service
+    tag: k8s
+
+  notificationService:
+    repository: finsightx/notification-service
+    tag: k8s
+
+  auditService:
+    repository: finsightx/audit-service
+    tag: k8s
+
+  mlService:
+    repository: finsightx/ml-service
+    tag: k8s
+
+  postgres:
+    repository: pgvector/pgvector
+    tag: pg18
+
+  redis:
+    repository: redis
+    tag: 7-alpine
+
+  kafka:
+    repository: apache/kafka
+    tag: "3.9.1"
+
+  minio:
+    repository: finsightx-minio
+    tag: k8s
+
+  prometheus:
+    repository: prom/prometheus
+    tag: v3.5.0
+
+  grafana:
+    repository: grafana/grafana
+    tag: 11.5.2
+
+replicaCount:
+  apiGateway: 1
+  authService: 1
+  customerService: 1
+  transactionService: 1
+  fraudService: 1
+  notificationService: 1
+  auditService: 1
+  mlService: 1
+  postgres: 1
+  redis: 1
+  kafka: 1
+  minio: 1
+  prometheus: 1
+  grafana: 1
+
+services:
+  apiGateway:
+    port: 8000
+    nodePort: 30080
+    type: NodePort
+
+  authService:
+    port: 8001
+
+  customerService:
+    port: 8009
+
+  transactionService:
+    port: 8010
+
+  fraudService:
+    port: 8004
+
+  notificationService:
+    port: 8005
+
+  auditService:
+    port: 8006
+
+  mlService:
+    port: 8008
+
+  postgres:
+    port: 5432
+
+  redis:
+    port: 6379
+
+  kafka:
+    port: 9092
+
+  minio:
+    apiPort: 9000
+    consolePort: 9001
+
+  prometheus:
+    port: 9090
+
+  grafana:
+    port: 3000
+
+resources:
+  default:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  fraudService:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 768Mi
+
+  mlService:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  postgres:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  redis:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  kafka:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  minio:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  prometheus:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  grafana:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+storage:
+  postgres:
+    size: 5Gi
+    storageClassName: standard
+
+  minio:
+    size: 10Gi
+    storageClassName: standard
+
+monitoring:
+  prometheus:
+    enabled: true
+
+  grafana:
+    enabled: true
