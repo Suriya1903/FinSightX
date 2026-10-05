@@ -2,47 +2,59 @@
 
 ## Distributed Financial Intelligence, Risk & Fraud Detection Platform
 
-FinSightX is an end-to-end financial intelligence platform demonstrating **microservices, distributed systems, event-driven architecture, real-time fraud detection, machine learning, MLOps, data engineering, data warehousing, business intelligence, security, monitoring, Docker and Kubernetes-ready infrastructure**.
+FinSightX is an end-to-end financial intelligence, risk, and fraud detection platform designed to demonstrate how a modern distributed fintech system can be built from the ground up.
 
-The platform is designed as a local-first system, allowing the complete architecture to run without depending on paid cloud services.
+The project combines:
+
+**Microservices + Distributed Systems + Event-Driven Architecture + Real-Time Fraud Detection + Machine Learning + MLOps + Data Engineering + Data Warehousing + Business Intelligence + Security + Docker + Kubernetes + Observability + Helm + Terraform + CI/CD**
+
+Unlike an isolated machine-learning project, FinSightX demonstrates how a fraud model can be integrated into a complete production-style platform: transactions enter through APIs, events move through Kafka, fraud is evaluated using Redis and ML, results are persisted, streaming data is processed with Spark, analytics are loaded into a warehouse, Power BI visualizes business intelligence, and the platform is monitored using Prometheus and Grafana.
+
+The platform is intentionally **local-first**. The complete development environment can be run on a Windows machine using Docker Desktop and a local Kubernetes `kind` cluster without requiring paid cloud infrastructure.
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [Architecture](#architecture)
-- [Technology Stack](#technology-stack)
-- [Application Services](#application-services)
-- [Transaction Flow](#transaction-flow)
-- [Fraud Detection](#fraud-detection)
-- [Machine Learning](#machine-learning)
-- [MLOps and MLflow](#mlops-and-mlflow)
-- [Kafka Event Architecture](#kafka-event-architecture)
-- [Data Lake and Spark](#data-lake-and-spark)
-- [Data Warehouse](#data-warehouse)
-- [Power BI](#power-bi)
-- [Security and Reliability](#security-and-reliability)
-- [Monitoring](#monitoring)
-- [Docker Deployment](#docker-deployment)
-- [Kubernetes and Infrastructure](#kubernetes-and-infrastructure)
-- [Testing](#testing)
-- [Project Structure](#project-structure)
-- [Local Setup](#local-setup)
-- [Service URLs](#service-urls)
-- [Verified End-to-End Flow](#verified-end-to-end-flow)
-- [Engineering Highlights](#engineering-highlights)
-- [Future Enhancements](#future-enhancements)
-- [Author](#author)
+- [1. Project Overview](#1-project-overview)
+- [2. What Has Been Implemented](#2-what-has-been-implemented)
+- [3. High-Level Architecture](#3-high-level-architecture)
+- [4. Technology Stack](#4-technology-stack)
+- [5. Microservices](#5-microservices)
+- [6. End-to-End Transaction Flow](#6-end-to-end-transaction-flow)
+- [7. Authentication and Security](#7-authentication-and-security)
+- [8. Kafka and Event-Driven Architecture](#8-kafka-and-event-driven-architecture)
+- [9. Redis Velocity and Idempotency](#9-redis-velocity-and-idempotency)
+- [10. Fraud Detection Engine](#10-fraud-detection-engine)
+- [11. Machine Learning Pipeline](#11-machine-learning-pipeline)
+- [12. ML Inference Service](#12-ml-inference-service)
+- [13. MLOps and MLflow](#13-mlops-and-mlflow)
+- [14. Spark Structured Streaming](#14-spark-structured-streaming)
+- [15. MinIO Data Lake](#15-minio-data-lake)
+- [16. PostgreSQL Analytics Warehouse](#16-postgresql-analytics-warehouse)
+- [17. Power BI](#17-power-bi)
+- [18. Observability](#18-observability)
+- [19. Docker Deployment](#19-docker-deployment)
+- [20. Kubernetes Deployment](#20-kubernetes-deployment)
+- [21. Helm](#21-helm)
+- [22. Terraform and Infrastructure](#22-terraform-and-infrastructure)
+- [23. Testing and Verification](#23-testing-and-verification)
+- [24. Project Structure](#24-project-structure)
+- [25. Local Docker Setup](#25-local-docker-setup)
+- [26. Kubernetes Setup](#26-kubernetes-setup)
+- [27. Useful Verification Commands](#27-useful-verification-commands)
+- [28. Current Verified Results](#28-current-verified-results)
+- [29. Engineering Highlights](#29-engineering-highlights)
+- [30. Future Enhancements](#30-future-enhancements)
+- [31. Author](#31-author)
 
 ---
 
-# Overview
+# 1. Project Overview
 
 FinSightX separates financial transaction processing into independently deployable services.
 
-The high-level flow is:
+The primary business flow is:
 
 ```text
 React Frontend
@@ -53,28 +65,38 @@ API Gateway
       +--------------------+
       |                    |
       v                    v
-Customer Service     Transaction Service
+ Auth Service        Customer Service
+                           |
+                           v
+                   Transaction Service
                            |
                            v
                          Kafka
                            |
-                           v
-                   Fraud Detection
-                     |          |
-                     v          v
-                   Redis     ML Service
-                  Velocity       |
-                     |       Random Forest
-                     +----------+
-                           |
-                           v
-                       PostgreSQL
-                           |
-                           v
-                    fraud.assessed
+              +------------+-------------+
+              |            |             |
+              v            v             v
+        Fraud Service   Spark       Other Consumers
+              |
+       +------+------+
+       |             |
+       v             v
+     Redis       ML Service
+   Velocity      Random Forest
+       |             |
+       +------+------+
+              |
+              v
+       Fraud Assessment
+              |
+       +------+------+
+       |             |
+       v             v
+   PostgreSQL     Kafka
+              fraud.assessed
 ```
 
-The data engineering path runs in parallel:
+The analytics/data-engineering path runs in parallel:
 
 ```text
 Kafka
@@ -82,82 +104,403 @@ Kafka
   v
 Spark Structured Streaming
   |
-  +----> MinIO Raw Data
-  |
-  +----> MinIO Processed Data
-                  |
-                  v
-             Warehouse ETL
-                  |
-                  v
-          PostgreSQL Analytics
-                  |
-                  v
-               Power BI
+  +----------------------+
+  |                      |
+  v                      v
+MinIO Raw           MinIO Processed
+                         |
+                         v
+                  Warehouse ETL
+                         |
+                         v
+               PostgreSQL Analytics
+                         |
+                         v
+                      Power BI
+```
+
+The observability path is:
+
+```text
+API Gateway / Fraud Service
+          |
+          v
+     Prometheus
+          |
+          v
+       Grafana
 ```
 
 ---
 
-# Key Features
+# 2. What Has Been Implemented
 
-## 1. Microservices
+The current implementation has progressed significantly beyond the original application prototype.
 
-Current services include:
+## Core platform
 
 - API Gateway
-- Auth Service
-- Customer Service
-- Transaction Service
-- Fraud Detection Service
-- Notification Service
-- Audit Service
-- Analytics Service
-- ML Service
+- Authentication service
+- Customer service
+- Transaction service
+- Fraud detection service
+- Notification service
+- Audit service
+- Analytics service
+- Dedicated ML inference service
+- React frontend structure
+- PostgreSQL
+- Redis
+- Apache Kafka
+- Spark Structured Streaming
+- MinIO
+- Power BI analytics
+- Prometheus
+- Grafana
 
-Each service has a focused responsibility and communicates with other components through APIs or events.
+## Security
 
-## 2. Event-Driven Architecture
+- JWT-based authentication
+- Role-based access control concepts
+- ADMIN and USER roles
+- Protected gateway routes
+- Environment-based secrets/configuration
+- `.env` excluded from Git
+- Password hashing
+- Authentication verification through the gateway
 
-Apache Kafka is the event backbone.
+## Fraud detection
 
-Important topics include:
+- Rule-based risk scoring
+- Redis transaction velocity tracking
+- Idempotent Kafka event processing
+- Machine-learning inference
+- Rule + ML fraud assessment persistence
+- `fraud.assessed` event publishing
+- Retry/DLQ architecture
+
+## Machine learning
+
+- Feature engineering pipeline
+- Synthetic fraud dataset
+- Random Forest model
+- Imbalanced-class handling
+- Model evaluation
+- Model serialization with Joblib
+- Dedicated FastAPI ML inference service
+- Model versioning
+- MLflow experiment tracking
+
+## Data engineering
+
+- Kafka to Spark Structured Streaming
+- Raw Parquet data in MinIO
+- Processed Parquet data in MinIO
+- Data-quality transformations
+- Date partitioning
+- Warehouse ETL
+- PostgreSQL dimensional warehouse
+
+## Business intelligence
+
+- PostgreSQL analytics layer
+- Star schema
+- Power BI dashboard
+- Fraud/risk measures
+- High-risk transaction analytics
+
+## Cloud-native infrastructure
+
+- Docker
+- Docker Compose
+- Kubernetes manifests
+- Local `kind` Kubernetes cluster
+- Helm chart
+- Kubernetes Services
+- Kubernetes Deployments
+- ConfigMaps
+- Secrets
+- Persistent Volumes
+- Health/readiness endpoints
+- Prometheus and Grafana deployed in Kubernetes
+
+## Observability
+
+- Prometheus instrumentation
+- API Gateway request counters
+- API Gateway request latency histograms
+- Fraud event counters
+- Fraud assessment counters
+- ML prediction counters
+- Processing failure counters
+- Fraud processing latency
+- Grafana dashboards
+- Kubernetes service monitoring
+
+## Deployment verification
+
+The complete Kubernetes deployment has been successfully brought up with all core deployments running.
+
+The Helm chart has also been successfully used to manage/adopt the Kubernetes resources.
+
+---
+
+# 3. High-Level Architecture
 
 ```text
-transaction.created
+                           +----------------------+
+                           |    React Frontend    |
+                           +----------+-----------+
+                                      |
+                                      v
+                           +----------------------+
+                           |     API Gateway      |
+                           |        :8000         |
+                           +----------+-----------+
+                                      |
+                 +--------------------+--------------------+
+                 |                    |                    |
+                 v                    v                    v
+          +-------------+      +-------------+      +-------------+
+          |    Auth     |      |  Customer   |      | Transaction |
+          |   Service   |      |   Service   |      |   Service   |
+          +-------------+      +-------------+      +------+------+
+                                                           |
+                                                           v
+                                                    +-------------+
+                                                    |    Kafka    |
+                                                    |    :9092    |
+                                                    +------+------+
+                                                           |
+                     +----------------------+--------------+----------------+
+                     |                      |                               |
+                     v                      v                               v
+              +-------------+       +-------------+                 +-------------+
+              |    Fraud    |       |    Spark    |                 |   Other     |
+              |   Service   |       |  Streaming  |                 | Consumers   |
+              +------+------+       +------+------+                 +-------------+
+                     |                     |
+              +------+-------+             |
+              |              |             v
+              v              v         +---------+
+           +------+      +-------+     |  MinIO  |
+           |Redis |      |  ML   |     +----+----+
+           |      |      |Service|          |
+           +------+      +---+---+          v
+                              |       +-------------+
+                              v       | Warehouse   |
+                       Random Forest  |    ETL      |
+                                      +------+------+
+                                             |
+                                             v
+                                      +-------------+
+                                      | PostgreSQL  |
+                                      | Analytics   |
+                                      +------+------+
+                                             |
+                                             v
+                                      +-------------+
+                                      |  Power BI   |
+                                      +-------------+
+
+Observability:
+
++-------------------+       +-------------+       +-------------+
+| Gateway/Fraud     | ----> | Prometheus  | ----> |   Grafana   |
+| /metrics          |       |    :9090    |       |    :3000    |
++-------------------+       +-------------+       +-------------+
+```
+
+---
+
+# 4. Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React |
+| Backend APIs | FastAPI |
+| Language | Python |
+| Authentication | JWT |
+| Authorization | Role-based access control |
+| Event Streaming | Apache Kafka |
+| Cache / Operational State | Redis |
+| Database | PostgreSQL 18 |
+| Vector Extension | pgvector |
+| Streaming | Apache Spark Structured Streaming |
+| Data Lake | MinIO |
+| Data Format | Parquet |
+| Data Processing | Pandas, NumPy, PyArrow |
+| ML | Scikit-learn |
+| ML Model | Random Forest |
+| Model Serialization | Joblib |
+| MLOps | MLflow |
+| BI | Microsoft Power BI |
+| Containers | Docker |
+| Local Orchestration | Docker Compose |
+| Kubernetes | Kubernetes + kind |
+| Package Management | Helm |
+| Infrastructure as Code | Terraform |
+| Metrics | Prometheus |
+| Dashboards | Grafana |
+| Testing | Pytest |
+| CI/CD | GitHub Actions |
+| Version Control | Git / GitHub |
+
+---
+
+# 5. Microservices
+
+## API Gateway
+
+The API Gateway is the external entry point to the platform.
+
+Responsibilities:
+
+- Central API entry point
+- Request routing
+- JWT authentication
+- Authorization/RBAC
+- HTTP metrics
+- Health endpoint
+- Service-to-service forwarding
+
+Important endpoints include:
+
+```text
+/health
+/metrics
+/api/v1/...
+```
+
+---
+
+## Auth Service
+
+Responsible for:
+
+- User registration
+- Authentication
+- Password hashing
+- JWT token generation
+- User roles
+
+Example roles:
+
+```text
+ADMIN
+USER
+```
+
+---
+
+## Customer Service
+
+Responsible for:
+
+- Customer creation
+- Customer retrieval
+- Customer status
+- Customer-related data
+
+---
+
+## Transaction Service
+
+Responsible for:
+
+1. Receiving transaction requests
+2. Validating transaction data
+3. Persisting transactions
+4. Publishing `transaction.created`
+5. Returning the transaction response
+
+---
+
+## Fraud Service
+
+The Fraud Service is one of the main components of the platform.
+
+Processing sequence:
+
+```text
+Kafka event
+     |
+     v
+Redis velocity
+     |
+     v
+Rule-based assessment
+     |
+     v
+ML Service
+     |
+     v
+Combined fraud assessment
+     |
+     v
+PostgreSQL
+     |
+     v
 fraud.assessed
-transaction.created.DLQ
 ```
 
-This decouples transaction creation from downstream fraud processing and analytics.
+It also handles:
 
-## 3. Real-Time Fraud Detection
+- Idempotency
+- Retries
+- DLQ behavior
+- Prometheus metrics
+- Fraud persistence
+- ML integration
 
-Fraud assessment combines:
+---
 
-- Transaction amount
-- Merchant category
-- Transaction frequency
-- Recent transaction amount
-- Device information
-- Location information
-- Transaction status
-- Rule-based scoring
-- Machine-learning prediction
+## Notification Service
 
-## 4. Redis Velocity Detection
+Consumes fraud-related events and provides the service boundary for high-risk notification processing.
 
-Redis maintains short-window customer transaction statistics such as:
+A verified high-risk transaction generated a high-risk alert record.
+
+---
+
+## Audit Service
+
+Provides an independent audit boundary for recording important platform actions.
+
+A verified gateway transaction generated an audit record containing information such as:
 
 ```text
-Transaction count
-Cumulative transaction amount
+gateway user
+role
+action
+resource
+status
 ```
 
-This allows the fraud service to identify unusually frequent or high-value transaction activity.
+---
 
-## 5. Dedicated ML Inference Service
+## Analytics Service
 
-The trained Random Forest model is deployed as its own FastAPI service.
+Responsible for:
+
+- Analytics APIs
+- Lake-to-warehouse ETL trigger
+- Analytics integration
+
+---
+
+## ML Service
+
+A dedicated FastAPI inference service.
+
+Responsibilities:
+
+- Load the trained Random Forest model
+- Validate inference input
+- Generate fraud probability
+- Generate prediction
+- Generate risk level
+- Expose health/readiness endpoints
 
 Endpoints:
 
@@ -167,255 +510,273 @@ GET  /ready
 POST /api/v1/predict
 ```
 
-The service returns:
+---
+
+# 6. End-to-End Transaction Flow
+
+A typical transaction moves through the system as follows:
 
 ```text
-prediction
-fraud_probability
-legitimate_probability
-risk_level
-model_name
-model_version
-model_threshold
+1. Client
+      |
+      v
+2. API Gateway
+      |
+      v
+3. Transaction Service
+      |
+      +----> PostgreSQL
+      |
+      +----> Kafka
+               |
+               | transaction.created
+               v
+4. Fraud Service
+      |
+      +----> Redis velocity
+      |
+      +----> Rule engine
+      |
+      +----> ML Service
+               |
+               v
+          Random Forest
+               |
+               v
+5. Fraud Assessment
+      |
+      +----> PostgreSQL
+      |
+      +----> Kafka
+               |
+               | fraud.assessed
+               +----> Notification Service
+               |
+               +----> Audit/other consumers
+
+Parallel data path:
+
+Kafka
+  |
+  v
+Spark
+  |
+  v
+MinIO
+  |
+  v
+Warehouse ETL
+  |
+  v
+PostgreSQL Analytics
+  |
+  v
+Power BI
 ```
 
-## 6. Spark Streaming and Data Lake
-
-Spark Structured Streaming consumes Kafka events and writes:
-
-```text
-raw/
-processed/
-checkpoints/
-```
-
-to MinIO using Parquet.
-
-## 7. Analytics Warehouse
-
-Processed data is loaded into PostgreSQL using a dimensional model:
-
-```text
-dim_date
-dim_customer
-dim_merchant
-dim_device
-dim_location
-fact_transactions
-```
-
-## 8. Power BI
-
-Power BI connects to the PostgreSQL analytics layer for financial and fraud-risk reporting.
-
-Current measures include:
-
-- Total Transactions
-- Total Amount
-- Average Transaction Amount
-- High Risk Transactions
-- Assessed Transactions
-- Unassessed Transactions
-- High Risk Amount
+The transaction-to-fraud path is asynchronous after the transaction event is published.
 
 ---
 
-# Architecture
+# 7. Authentication and Security
+
+Security is implemented as a platform concern rather than an isolated feature.
+
+## JWT Authentication
+
+The authentication flow is:
 
 ```text
-                         +----------------------+
-                         |    React Frontend    |
-                         |        :5173         |
-                         +----------+-----------+
-                                    |
-                                    v
-                         +----------------------+
-                         |     API Gateway      |
-                         |        :8002         |
-                         +----------+-----------+
-                                    |
-              +---------------------+---------------------+
-              |                     |                     |
-              v                     v                     v
-       +-------------+       +-------------+       +-------------+
-       | Auth        |       | Customer    |       | Transaction |
-       | Service     |       | Service     |       | Service     |
-       | :8001       |       | :8009       |       | :8010       |
-       +-------------+       +-------------+       +------+------+
-                                                        |
-                                                        v
-                                                 +-------------+
-                                                 |    Kafka    |
-                                                 |   :29092    |
-                                                 +------+------+
-                                                        |
-                           +----------------------------+----------------+
-                           |                            |                |
-                           v                            v                v
-                    +-------------+             +-------------+    Other Consumers
-                    | Fraud       |             | Spark       |
-                    | Service     |             | Streaming   |
-                    | :8004       |             +------+------+ 
-                    +------+------+                    |
-                           |                           v
-              +------------+-----------+        +-------------+
-              |                        |        |    MinIO    |
-              v                        v        |   :9000     |
-           +------+              +-----------+  +------+------+ 
-           |Redis |              | ML Service|         |
-           |:6380 |              |   :8008   |         v
-           +------+              +-----+-----+  +-------------+
-                                        |        | Warehouse   |
-                                        v        | ETL         |
-                                  Random Forest  +------+------+
-                                                       |
-                                                       v
-                                                +-------------+
-                                                | PostgreSQL  |
-                                                |   :5434     |
-                                                +------+------+
-                                                       |
-                                                       v
-                                                +-------------+
-                                                | Analytics   |
-                                                |   :8007     |
-                                                +------+------+
-                                                       |
-                                                       v
-                                                  +----------+
-                                                  | Power BI |
-                                                  +----------+
-
-Monitoring:
-Services -> Prometheus -> Grafana
-```
-
----
-
-# Technology Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | React |
-| APIs | FastAPI, REST |
-| Language | Python |
-| Authentication | JWT |
-| Event Streaming | Apache Kafka |
-| Cache / Velocity | Redis |
-| Database | PostgreSQL 18 |
-| Vector Support | pgvector |
-| Streaming | Apache Spark Structured Streaming |
-| Data Lake | MinIO |
-| Data Format | Parquet |
-| ML | Scikit-learn |
-| Model | Random Forest |
-| Data Processing | Pandas, NumPy, PyArrow |
-| Model Serialization | Joblib |
-| MLOps | MLflow |
-| BI | Power BI |
-| Containers | Docker, Docker Compose |
-| Kubernetes | Kubernetes, kind |
-| Package Management | Helm |
-| IaC | Terraform |
-| Monitoring | Prometheus, Grafana |
-| Testing | Pytest |
-| CI/CD | GitHub Actions |
-
----
-
-# Application Services
-
-## API Gateway
-
-Provides a common entry point for frontend/API clients and separates external access from internal service communication.
-
-## Auth Service
-
-Handles authentication and JWT-based access control.
-
-## Customer Service
-
-Manages customer information and customer-related operations.
-
-## Transaction Service
-
-Creates transactions, persists them in PostgreSQL and publishes `transaction.created` events to Kafka.
-
-## Fraud Detection Service
-
-Consumes transaction events and performs:
-
-1. Redis velocity calculation
-2. Rule-based risk assessment
-3. ML inference
-4. Fraud assessment persistence
-5. `fraud.assessed` event publication
-6. Idempotency handling
-
-## Notification Service
-
-Provides the service boundary for downstream notification processing.
-
-## Audit Service
-
-Provides an independent service boundary for audit-related records and events.
-
-## Analytics Service
-
-Exposes analytics APIs and provides the lake-to-warehouse ETL trigger.
-
-## ML Service
-
-Loads the trained fraud model and provides real-time inference through FastAPI.
-
----
-
-# Transaction Flow
-
-A transaction follows this path:
-
-```text
+Login
+  |
+  v
+Auth Service
+  |
+  v
+JWT
+  |
+  v
 Client
   |
   v
-Transaction Service
+API Gateway
   |
-  +--> PostgreSQL
+  v
+Token validation
   |
-  +--> Kafka: transaction.created
-                |
-                v
-          Fraud Service
-                |
-        +-------+-------+
-        |       |       |
-        v       v       v
-      Redis   Rules   ML Service
-        |       |       |
-        +-------+-------+
-                |
-                v
-         Fraud Assessment
-                |
-        +-------+-------+
-        |               |
-        v               v
-    PostgreSQL     Kafka: fraud.assessed
+  v
+Authorized service operation
 ```
 
-The processing is asynchronous after the transaction event is published.
+## RBAC
+
+Role-based access is used to distinguish privileged and normal users.
+
+Example:
+
+```text
+ADMIN
+USER
+```
+
+Administrative gateway access was verified using an ADMIN account.
+
+## Password Security
+
+Passwords are stored using secure password hashing rather than plain text.
+
+## Environment Configuration
+
+Sensitive values are configured through environment variables.
+
+The repository commits configuration templates rather than real secrets.
+
+```text
+.env.example   -> committed
+.env           -> ignored
+```
+
+## Kubernetes Secrets
+
+Kubernetes deployment includes Secret resources for sensitive configuration such as database/JWT/MinIO credentials.
+
+For production, external secret management should be used instead of static development secrets.
 
 ---
 
-# Fraud Detection
+# 8. Kafka and Event-Driven Architecture
+
+Kafka acts as the event backbone.
+
+Important topics:
+
+```text
+transaction.created
+fraud.assessed
+transaction.created.DLQ
+```
+
+## Transaction Event
+
+```text
+Transaction Service
+       |
+       v
+transaction.created
+       |
+       +----> Fraud Service
+       |
+       +----> Spark Streaming
+       |
+       +----> Other consumers
+```
+
+## Fraud Event
+
+```text
+Fraud Service
+      |
+      v
+fraud.assessed
+      |
+      +----> Notification
+      |
+      +----> Audit/other consumers
+```
+
+This architecture prevents the Transaction Service from waiting synchronously for every downstream operation.
+
+---
+
+## Event Versioning
+
+Fraud events currently use versioned event payloads. A verified fraud event was published as event version:
+
+```text
+2.0
+```
+
+This establishes a foundation for stronger event-contract management in future versions.
+
+---
+
+## Idempotency
+
+Fraud processing uses an event-specific Redis idempotency key:
+
+```text
+fraud:processed:{event_id}
+```
+
+If a previously successful event is delivered again, the service can detect that it has already been processed.
+
+---
+
+## Retry and DLQ
+
+Failures can be retried.
+
+Events that exceed retry limits can be routed to:
+
+```text
+transaction.created.DLQ
+```
+
+This prevents a poison event from continuously blocking normal processing.
+
+---
+
+# 9. Redis Velocity and Idempotency
+
+Redis is used for fast operational state.
+
+For fraud detection, Redis maintains short-window transaction statistics such as:
+
+```text
+transaction count
+cumulative transaction amount
+recent transaction amount
+```
+
+Example:
+
+```text
+Customer
+   |
+   +--> Transaction 1: ₹20,000
+   +--> Transaction 2: ₹25,000
+   +--> Transaction 3: ₹75,000
+                |
+                v
+        High transaction velocity
+                |
+                v
+          Fraud signal
+```
+
+Redis is also used for event idempotency.
+
+This gives Redis two important roles:
+
+1. Real-time fraud features
+2. Reliable event-processing state
+
+---
+
+# 10. Fraud Detection Engine
+
+FinSightX combines deterministic rules with machine learning.
 
 ## Rule-Based Detection
 
-Current rules include signals for:
+Signals include:
 
 - Very high transaction amount
 - High transaction amount
-- High-risk categories such as gambling, crypto and money transfer
+- High-risk merchant categories
+- Gambling
+- Crypto
+- Money transfer
 - Missing device
 - Missing location
 - High transaction frequency
@@ -429,12 +790,63 @@ risk_score
 reasons
 ```
 
+Example:
+
+```text
+Amount            : ₹75,000
+Category          : Crypto
+Location          : Chennai
+Velocity          : High
+
+Rule Risk Level   : HIGH
+Rule Risk Score   : 100
+```
+
+---
+
 ## Machine Learning Detection
 
-The ML service receives engineered transaction features including:
+The ML model independently evaluates engineered transaction features.
+
+The final fraud assessment stores both rule-based and ML information.
+
+Example:
+
+```json
+{
+  "rule_based": {
+    "risk_level": "HIGH",
+    "risk_score": 100
+  },
+  "machine_learning": {
+    "model_name": "fraud_random_forest",
+    "model_version": "7D",
+    "prediction": "FRAUD",
+    "fraud_probability": 0.896390,
+    "legitimate_probability": 0.103610,
+    "risk_level": "HIGH",
+    "threshold": 0.5
+  }
+}
+```
+
+The exact probability changes depending on the transaction features.
+
+**Important:** the current model is trained on synthetic data. Its probability must not be interpreted as a real-world calibrated fraud probability.
+
+---
+
+# 11. Machine Learning Pipeline
+
+## Feature Engineering
+
+The feature builder reads warehouse data and creates model-ready features.
+
+Important features include:
 
 ```text
 amount
+amount_log
 amount_band_code
 is_high_risk_merchant_category
 has_device
@@ -454,54 +866,22 @@ currency
 transaction_status
 ```
 
-The final Kafka fraud event stores both rule-based and ML results.
-
-Example:
-
-```json
-{
-  "rule_based": {
-    "risk_level": "HIGH",
-    "risk_score": 100
-  },
-  "machine_learning": {
-    "model_name": "fraud_random_forest",
-    "model_version": "7D",
-    "prediction": "FRAUD",
-    "fraud_probability": 0.928296,
-    "legitimate_probability": 0.071704,
-    "risk_level": "HIGH",
-    "threshold": 0.5
-  }
-}
-```
-
-The probability is a model output from the current synthetic-data experiment and is not a real-world fraud probability.
+Real-time velocity features are obtained from Redis during fraud inference.
 
 ---
 
-# Machine Learning
+## Training Dataset
 
-## Feature Engineering
-
-The feature builder derives transaction features such as:
+The current synthetic training dataset contains:
 
 ```text
-amount_log
-amount_band_code
-transaction_hour
-transaction_day_of_week
-is_weekend
-is_night_transaction
-is_high_risk_merchant_category
-has_device
-has_location
-customer_is_active
-is_inr
-is_pending
+Total rows     : 10,000
+Legitimate     : 9,793
+Fraud          : 207
+Fraud rate     : 2.07%
 ```
 
-Real-time velocity features are supplied by Redis during inference.
+---
 
 ## Model
 
@@ -514,32 +894,44 @@ RandomForestClassifier
 Training configuration:
 
 ```text
-300 trees
-random_state = 42
-class_weight = balanced
-max_features = sqrt
+n_estimators     = 300
+random_state     = 42
+class_weight     = balanced
+max_features     = sqrt
 min_samples_leaf = 2
 ```
 
-The current synthetic dataset contains:
+The model is serialized with Joblib:
 
 ```text
-10,000 rows
-9,793 legitimate
-207 fraud
-Fraud rate: 2.07%
+ml/models/fraud_random_forest.joblib
 ```
 
-## Evaluation
+---
+
+## Validation Results
+
+Current synthetic validation results:
+
+```text
+Precision : 0.8667
+Recall    : 0.8387
+F1 Score  : 0.8525
+ROC-AUC   : 0.9974
+```
+
+---
+
+## Test Results
 
 Current synthetic test results:
 
 ```text
-Accuracy   : 0.9947
-Precision  : 0.7949
-Recall     : 1.0000
-F1 Score   : 0.8857
-ROC-AUC    : 0.9998
+Accuracy  : 0.9947
+Precision : 0.7949
+Recall    : 1.0000
+F1 Score  : 0.8857
+ROC-AUC   : 0.9998
 ```
 
 Confusion matrix:
@@ -549,15 +941,91 @@ Confusion matrix:
  [   0   31]]
 ```
 
-These metrics are a synthetic-data baseline. The unusually high performance is influenced by the way the synthetic labels were generated from patterns overlapping with the model features, so these numbers should not be presented as production fraud-detection performance.
+The high ROC-AUC is not evidence of production-level fraud detection performance. The synthetic labels were generated using patterns that overlap with the model features, which can make the classification problem artificially easy.
 
 ---
 
-# MLOps and MLflow
+## Feature Importance
 
-MLflow is used for experiment tracking and model-related artifacts.
+Important model features include:
 
-The training workflow records information such as:
+```text
+amount                     25.23%
+recent_transaction_amount  16.64%
+transaction_velocity       13.04%
+amount_band_code            12.23%
+high_velocity_amount         9.79%
+high-risk merchant category  6.66%
+night                        4.32%
+transaction_hour             3.99%
+```
+
+This gives an interpretable view of which engineered signals influenced the model most strongly in the current experiment.
+
+---
+
+# 12. ML Inference Service
+
+The model is not embedded directly into the Transaction Service.
+
+Instead:
+
+```text
+Fraud Service
+     |
+     | HTTP
+     v
+ML Service
+     |
+     v
+Random Forest
+     |
+     v
+Prediction
+```
+
+This separation makes it possible to:
+
+- Deploy the model independently
+- Version the model
+- Scale ML inference separately
+- Replace the model without changing transaction processing
+- Add model monitoring later
+- Support multiple model versions
+
+Example endpoint:
+
+```text
+POST /api/v1/predict
+```
+
+Example response:
+
+```json
+{
+  "model_name": "fraud_random_forest",
+  "model_version": "7D",
+  "prediction": "FRAUD",
+  "fraud_probability": 0.9576919434179314,
+  "legitimate_probability": 0.04230805658206862,
+  "risk_level": "HIGH",
+  "model_threshold": 0.5
+}
+```
+
+The deployed local model version used during verification was:
+
+```text
+7D
+```
+
+---
+
+# 13. MLOps and MLflow
+
+MLflow is used for experiment tracking.
+
+The training workflow records:
 
 - Parameters
 - Metrics
@@ -566,98 +1034,58 @@ The training workflow records information such as:
 - Input example
 - Experiment information
 
-The ML service uses:
-
-```text
-MODEL_PATH
-MODEL_VERSION
-```
-
-so inference results can be associated with a deployed model version.
-
-Local MLflow artifacts/databases are excluded from Git.
-
----
-
-# Kafka Event Architecture
-
-Important events:
-
-```text
-transaction.created
-fraud.assessed
-transaction.created.DLQ
-```
+The local MLflow tracking store uses SQLite.
 
 Example:
 
 ```text
-Transaction Service
-       |
-       v
-transaction.created
-       |
-       +----> Fraud Service
-       |
-       +----> Spark Streaming
-
-Fraud Service
-       |
-       v
-fraud.assessed
+ml/experiments/mlflow.db
 ```
 
-## Idempotency
+The training code configures MLflow with a SQLite tracking URI and logs the trained scikit-learn model.
 
-The fraud service uses a Redis idempotency key:
+A local MLflow UI can be started with:
 
-```text
-fraud:processed:{event_id}
+```powershell
+mlflow ui `
+  --backend-store-uri "sqlite:///D:/FinSightX/ml/experiments/mlflow.db" `
+  --host 127.0.0.1 `
+  --port 5000
 ```
 
-to prevent successful events from being processed repeatedly.
-
-## Retry and DLQ
-
-Failed event processing can be retried. Events that exceed the retry limit can be sent to:
-
-```text
-transaction.created.DLQ
-```
+Local MLflow databases and experiment artifacts are excluded from Git where appropriate.
 
 ---
 
-# Data Lake and Spark
+# 14. Spark Structured Streaming
 
-Spark Structured Streaming reads transaction events from Kafka.
+Spark consumes Kafka transaction events.
 
-The MinIO bucket is:
-
-```text
-finsightx-data
-```
-
-Data is organized into:
+The streaming architecture is:
 
 ```text
-raw/transactions
-processed/transactions
-checkpoints/transactions
-checkpoints/processed_transactions
+Kafka
+  |
+  v
+Spark Structured Streaming
+  |
+  +----> Raw Parquet
+  |
+  +----> Processed Parquet
 ```
 
-The processed layer performs:
+Spark performs transformations including:
 
 - String trimming
 - Currency normalization
-- Category normalization
+- Merchant-category normalization
 - Amount null handling
 - Date extraction
 - Amount bands
 - Data-quality classification
 - Processing-layer tagging
 
-Processed data is partitioned by:
+Processed data is partitioned using:
 
 ```text
 year/month/day
@@ -665,42 +1093,87 @@ year/month/day
 
 ---
 
-# Data Warehouse
+# 15. MinIO Data Lake
 
-The warehouse ETL flow is:
+MinIO provides S3-compatible local object storage.
+
+Bucket:
 
 ```text
-MinIO processed Parquet
-        |
-        v
-Spark warehouse loader
-        |
-        v
+finsightx-data
+```
+
+The data layout includes:
+
+```text
+raw/
+processed/
+checkpoints/
+```
+
+Important paths include:
+
+```text
+raw/transactions
+
+processed/transactions
+
+checkpoints/transactions
+
+checkpoints/processed_transactions
+```
+
+Parquet is used because it is columnar and suitable for analytical workloads.
+
+---
+
+# 16. PostgreSQL Analytics Warehouse
+
+The lake-to-warehouse flow is:
+
+```text
+MinIO Processed Parquet
+          |
+          v
+Spark Warehouse Loader
+          |
+          v
 analytics.stg_processed_transactions
-        |
-        v
-Dimension loading
-        |
-        v
+          |
+          v
+Dimension Loading
+          |
+          v
 fact_transactions
 ```
 
-Star schema:
+The warehouse uses a star schema.
 
 ```text
-                  dim_customer
-                       |
-                       |
-dim_date ---- fact_transactions ---- dim_merchant
-                       |
-                       |
-                  dim_device
-                       |
-                       |
-                  dim_location
+                     dim_customer
+                          |
+                          |
+dim_date -------- fact_transactions -------- dim_merchant
+                          |
+                          |
+                     dim_device
+                          |
+                          |
+                    dim_location
 ```
 
-Current verified local warehouse counts:
+Tables:
+
+```text
+analytics.dim_date
+analytics.dim_customer
+analytics.dim_merchant
+analytics.dim_device
+analytics.dim_location
+analytics.fact_transactions
+```
+
+Verified local warehouse counts during implementation:
 
 ```text
 dim_date          : 2
@@ -711,9 +1184,13 @@ dim_location      : 1
 fact_transactions : 23
 ```
 
+These counts are verification snapshots and will change as new transactions are processed.
+
 ---
 
-# Power BI
+# 17. Power BI
+
+Power BI connects to the PostgreSQL analytics layer.
 
 Dashboard:
 
@@ -721,7 +1198,13 @@ Dashboard:
 FinSightX — Financial Risk & Fraud Analytics
 ```
 
-Current measures:
+Page:
+
+```text
+Risk Dashboard
+```
+
+Current measures include:
 
 ```text
 Total Transactions
@@ -733,7 +1216,7 @@ Unassessed Transactions
 High Risk Amount
 ```
 
-Risk categories used for reporting include:
+A reporting column is also used to normalize risk display:
 
 ```text
 HIGH
@@ -742,86 +1225,179 @@ LOW
 NOT_ASSESSED
 ```
 
-Power BI connects to the PostgreSQL analytics database.
+A verified dashboard scenario filtered transactions by date, merchant, and HIGH risk to validate that the warehouse and reporting layer were returning the expected fraud-risk results.
 
 ---
 
-# Security and Reliability
+# 18. Observability
 
-Security/reliability is handled across multiple layers.
+Observability was implemented after the initial application and data-engineering phases.
 
-## JWT
-
-JWT-based authentication is used for API/service access.
-
-## Environment Variables
-
-Sensitive configuration is stored through environment variables.
-
-Only `.env.example` is committed. Real `.env` files are ignored.
-
-## Redis
-
-Redis provides fast operational state for:
-
-- Velocity tracking
-- Idempotency
-
-## PostgreSQL
-
-PostgreSQL provides durable storage for transaction, fraud and analytical data.
-
-## Kafka
-
-Kafka decouples producers and consumers and supports asynchronous event processing.
-
-## Health and Readiness
-
-The ML service exposes:
+The current monitoring architecture is:
 
 ```text
-/health
-/ready
+API Gateway       Fraud Service
+      |                 |
+      | /metrics       | /metrics
+      +--------+--------+
+               |
+               v
+          Prometheus
+               |
+               v
+            Grafana
 ```
 
-`/ready` verifies that the fraud model has been loaded successfully.
+## Prometheus
+
+Prometheus is configured to scrape:
+
+```text
+Prometheus
+API Gateway
+Fraud Service
+```
+
+All configured application targets were verified as `UP`.
 
 ---
 
-# Monitoring
+## API Gateway Metrics
 
-The monitoring architecture is:
-
-```text
-Application Services
-        |
-        v
-     Metrics
-        |
-        v
-   Prometheus
-        |
-        v
-     Grafana
-```
-
-The FastAPI platform exposes metrics through:
+The gateway records:
 
 ```text
-/metrics
+finsightx_http_requests_total
+
+finsightx_http_request_duration_seconds
 ```
 
-Prometheus and Grafana are included in the local infrastructure.
+Labels include:
+
+```text
+method
+path
+status_code
+```
+
+This allows request rates, status codes, and latency to be analyzed.
 
 ---
 
-# Docker Deployment
+## Fraud Service Metrics
 
-Start the complete stack:
+Fraud metrics include:
 
-```powershell
-docker compose up -d
+```text
+finsightx_fraud_events_processed_total
+
+finsightx_fraud_assessments_total
+
+finsightx_ml_predictions_total
+
+finsightx_fraud_processing_failures_total
+
+finsightx_ml_prediction_failures_total
+
+finsightx_fraud_processing_duration_seconds
 ```
+
+Examples:
+
+```text
+Fraud events processed
+Fraud assessments by risk level
+ML predictions
+ML predictions by risk level
+Fraud processing failures
+ML prediction failures
+Fraud processing latency
+```
+
+---
+
+## Verified Observability Transaction
+
+A dedicated observability transaction was processed successfully.
+
+Example:
+
+```text
+Transaction ID : 0ccfbe22-4021-4a6c-bb09-6ab15ac961bb
+Amount         : ₹75,000
+Currency       : INR
+Merchant       : FinSightX Observability Test
+Category       : Crypto
+Location       : Chennai
+Device         : observability-test-device-001
+Status         : PENDING
+```
+
+Observed processing:
+
+```text
+Kafka event received
+        ↓
+Redis velocity
+        ↓
+Rule assessment
+        ↓
+ML prediction
+        ↓
+Fraud persistence
+        ↓
+fraud.assessed
+        ↓
+Idempotency
+```
+
+Verified metrics included:
+
+```text
+fraud events processed       : 1 success
+fraud assessments            : 1 HIGH
+ML predictions               : 1 FRAUD/HIGH
+fraud processing failures    : 0
+ML prediction failures      : 0
+processing count             : 1
+```
+
+Measured processing latency for that verification event was approximately:
+
+```text
+1.207 seconds
+```
+
+This is a single local verification measurement, not a production performance benchmark.
+
+---
+
+## Grafana
+
+The Grafana dashboard contains API Gateway panels such as:
+
+- Requests by API Endpoint
+- HTTP Requests by Status Code
+- API Gateway P95 Latency
+- HTTP Request Rate
+- API Gateway Status
+
+Fraud/ML observability panels were added for:
+
+1. Fraud Events Processed
+2. Fraud Assessments by Risk Level
+3. ML Predictions
+4. ML Predictions by Risk Level
+5. Fraud Processing Failures
+6. ML Prediction Failures
+7. Fraud Processing Latency / P95
+8. Fraud Service Status
+
+---
+
+# 19. Docker Deployment
+
+Docker is used for local multi-service deployment.
 
 Build and start:
 
@@ -835,52 +1411,221 @@ Check:
 docker compose ps
 ```
 
+View logs:
+
+```powershell
+docker compose logs --tail 100
+```
+
 Stop:
 
 ```powershell
 docker compose down
 ```
 
-The current local stack includes PostgreSQL, Redis, Kafka, MinIO, Spark and the application microservices.
+The local Docker architecture includes application services and infrastructure such as:
+
+```text
+PostgreSQL
+Redis
+Kafka
+MinIO
+Spark
+FastAPI services
+```
 
 ---
 
-# Kubernetes and Infrastructure
+# 20. Kubernetes Deployment
 
-The repository contains:
+The project has progressed from being merely Kubernetes-ready to having the core platform deployed and verified on a local Kubernetes cluster.
 
-```text
-infrastructure/
-├── docker/
-├── kubernetes/
-├── helm/
-└── terraform/
-```
+## Local Cluster
 
-The Kubernetes layer is intended for cloud-native deployment concepts such as:
-
-- Deployments
-- Services
-- ConfigMaps
-- Secrets
-- Health probes
-- Scaling
-
-Local Kubernetes development can use:
+The cluster is created with:
 
 ```text
 kind
-kubectl
-Helm
 ```
 
-Terraform is included for Infrastructure-as-Code workflows.
+Current cluster:
 
-The current development approach remains local-first and does not require paid cloud infrastructure.
+```text
+finsightx
+```
+
+Namespace:
+
+```text
+finsightx
+```
+
+Control-plane node:
+
+```text
+finsightx-control-plane
+```
 
 ---
 
-# Testing
+## Kubernetes Components
+
+The namespace currently contains deployments for:
+
+```text
+api-gateway
+auth-service
+customer-service
+transaction-service
+fraud-service
+notification-service
+audit-service
+ml-service
+kafka
+minio
+postgres
+redis
+prometheus
+grafana
+```
+
+The core deployments were verified as:
+
+```text
+1/1 Running
+```
+
+during the implementation milestone.
+
+---
+
+## Kubernetes Services
+
+Important service ports:
+
+```text
+api-gateway            8000
+auth-service           8001
+fraud-service          8004
+notification-service   8005
+audit-service          8006
+ml-service             8008
+customer-service       8009
+transaction-service    8010
+kafka                  9092
+minio                  9000 / 9001
+postgres               5432
+redis                  6379
+prometheus             9090
+grafana                3000
+```
+
+The API Gateway also has a Kubernetes NodePort:
+
+```text
+30080
+```
+
+For the local kind environment, port-forwarding is the preferred and verified access method.
+
+---
+
+## Persistent Storage
+
+Persistent volumes currently used include:
+
+```text
+minio-pvc      10Gi
+postgres-pvc    5Gi
+```
+
+Some development infrastructure such as Redis, Kafka, Prometheus and Grafana uses ephemeral storage in the current local setup.
+
+---
+
+# 21. Helm
+
+FinSightX now includes a Helm chart:
+
+```text
+infrastructure/helm/finsightx
+```
+
+The chart contains:
+
+```text
+Chart.yaml
+values.yaml
+templates/
+_helpers.tpl
+.helmignore
+```
+
+The chart defines configuration for:
+
+- Application images
+- PostgreSQL
+- Redis
+- Kafka
+- MinIO
+- JWT configuration
+- ML configuration
+- Services
+- Replicas
+- Resources
+- Storage
+- Monitoring
+- Secrets
+
+Validate the chart:
+
+```powershell
+helm lint .\infrastructure\helm\finsightx
+```
+
+The chart passed Helm linting.
+
+---
+
+## Helm Deployment
+
+The platform was successfully adopted/upgraded through Helm:
+
+```powershell
+helm upgrade --install finsightx .\infrastructure\helm\finsightx `
+    --namespace finsightx `
+    --force-conflicts
+```
+
+Result:
+
+```text
+Release "finsightx" has been upgraded.
+STATUS: deployed
+REVISION: 2
+```
+
+This means Kubernetes resources are now managed as part of the FinSightX Helm release rather than existing only as manually applied manifests.
+
+---
+
+# 22. Terraform and Infrastructure
+
+Terraform is included under:
+
+```text
+infrastructure/terraform
+```
+
+The purpose is to demonstrate Infrastructure-as-Code concepts and provide a path toward cloud infrastructure.
+
+The current project intentionally remains local-first.
+
+The architecture is designed so that infrastructure components can later be mapped to cloud equivalents.
+
+---
+
+# 23. Testing and Verification
 
 The repository contains:
 
@@ -892,47 +1637,117 @@ tests/
 └── security/
 ```
 
-Testing targets include:
+Testing areas include:
 
 - REST APIs
+- Authentication
+- Authorization
 - Fraud rules
 - ML inference
 - Database operations
-- Kafka event processing
+- Kafka events
+- Redis state
+- End-to-end processing
 - Integration flows
 - Security behavior
-- Reliability scenarios
+- Observability
 
-A verified end-to-end ML flow has demonstrated:
+---
+
+## Verified End-to-End ML Flow
+
+A complete transaction was successfully verified through:
 
 ```text
-Transaction Service
-       |
-       v
+Transaction
+    |
+    v
 Kafka
-       |
-       v
+    |
+    v
 Fraud Service
-       |
-       +--> Redis velocity
-       |
-       +--> Rule assessment
-       |
-       +--> ML Service
-                |
-                v
-          Random Forest
-                |
-                v
+    |
+    +----> Redis velocity
+    |
+    +----> Rule engine
+    |
+    +----> ML Service
+              |
+              v
+        Random Forest
+              |
+              v
+        Fraud Assessment
+              |
+              v
           PostgreSQL
-                |
-                v
-          fraud.assessed
+              |
+              v
+        fraud.assessed
 ```
 
 ---
 
-# Project Structure
+## Verified Authentication and RBAC Flow
+
+The gateway authentication path was verified using an ADMIN account.
+
+The platform successfully demonstrated:
+
+```text
+Login
+  ↓
+JWT generation
+  ↓
+Gateway authentication
+  ↓
+Role verification
+  ↓
+Authorized operation
+```
+
+---
+
+## Verified Notification Flow
+
+A high-risk transaction produced a high-risk notification record.
+
+Example notification classification:
+
+```text
+HIGH_RISK_ALERT
+URGENT
+HIGH
+```
+
+---
+
+## Verified Audit Flow
+
+A gateway transaction generated an audit record containing:
+
+```text
+gateway user
+ADMIN role
+CREATE_TRANSACTION
+SUCCESS
+```
+
+---
+
+## Verified Kafka Consumer Health
+
+The notification consumer was checked and its consumer-group lag reached:
+
+```text
+0
+```
+
+after successful processing.
+
+---
+
+# 24. Project Structure
 
 ```text
 FinSightX/
@@ -973,6 +1788,7 @@ FinSightX/
 │   ├── docker/
 │   ├── kubernetes/
 │   ├── helm/
+│   │   └── finsightx/
 │   └── terraform/
 │
 ├── monitoring/
@@ -1000,11 +1816,11 @@ FinSightX/
 
 ---
 
-# Local Setup
+# 25. Local Docker Setup
 
 ## Prerequisites
 
-Install:
+Recommended tools:
 
 - Python 3.11+
 - Node.js
@@ -1017,14 +1833,18 @@ Install:
 - Helm
 - Terraform
 
-## 1. Clone
+---
+
+## Clone
 
 ```powershell
-git clone <YOUR_GITHUB_REPOSITORY>
+git clone https://github.com/Suriya1903/FinSightX.git
 cd FinSightX
 ```
 
-## 2. Python Environment
+---
+
+## Python Environment
 
 ```powershell
 python -m venv .venv
@@ -1032,7 +1852,9 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## 3. Environment
+---
+
+## Environment
 
 Copy:
 
@@ -1046,23 +1868,27 @@ to:
 .env
 ```
 
-Configure local credentials and service settings.
+Configure local values as required.
 
-Do not commit `.env`.
+Never commit real credentials.
 
-## 4. Start Docker
+---
+
+## Start Docker
 
 ```powershell
 docker compose up -d --build
 ```
 
-Verify:
+Check:
 
 ```powershell
 docker compose ps
 ```
 
-## 5. Verify ML Service
+---
+
+## Verify ML Service
 
 ```powershell
 Invoke-RestMethod `
@@ -1070,162 +1896,426 @@ Invoke-RestMethod `
   -Method GET
 ```
 
+Then:
+
 ```powershell
 Invoke-RestMethod `
   -Uri http://localhost:8008/ready `
   -Method GET
 ```
 
-Expected model:
+The readiness response verifies that the model has been loaded.
 
-```text
-fraud_random_forest
-```
+---
 
-Current deployed local model version:
+## Test ML Prediction
 
-```text
-7D
-```
-
-## 6. Create a Transaction
+Example request:
 
 ```powershell
 $body = @{
-    customer_id = "<CUSTOMER_UUID>"
     amount = 75000
-    currency = "INR"
-    merchant_name = "FinSight ML Test Merchant"
+    amount_band_code = 3
+    is_high_risk_merchant_category = 1
+    has_device = 1
+    has_location = 1
+    customer_is_active = 1
+    is_inr = 1
+    is_pending = 1
+    transaction_hour = 22
+    transaction_day_of_week = 2
+    is_weekend = 0
+    is_night_transaction = 1
+    transaction_velocity = 1
+    recent_transaction_amount = 75000
+    high_velocity_amount = 75000
     merchant_category = "Crypto"
-    location = "Chennai"
-    device_id = "device-ml-test-001"
+    currency = "INR"
+    transaction_status = "PENDING"
 } | ConvertTo-Json
 
 Invoke-RestMethod `
-  -Uri http://localhost:8010/api/v1/transactions `
+  -Uri http://localhost:8008/api/v1/predict `
   -Method POST `
   -ContentType "application/json" `
   -Body $body
 ```
 
-## 7. Inspect Fraud Processing
+---
+
+# 26. Kubernetes Setup
+
+## Create Cluster
 
 ```powershell
-docker logs --tail 100 finsightx-fraud-service
+kind create cluster --name finsightx
 ```
 
-Look for:
-
-```text
-VELOCITY
-RULE ASSESSMENT
-Calling ML service
-ML prediction received
-FRAUD ASSESSMENT STORED
-FRAUD EVENT PUBLISHED
-EVENT PROCESSED SUCCESSFULLY
-```
-
-## 8. Inspect Kafka
+Verify:
 
 ```powershell
-docker exec finsightx-kafka /opt/kafka/bin/kafka-console-consumer.sh `
-  --bootstrap-server localhost:9092 `
-  --topic fraud.assessed `
-  --from-beginning `
-  --max-messages 10
-```
-
-## 9. Run Warehouse ETL
-
-```powershell
-docker exec finsightx-spark `
-  /opt/spark/bin/spark-submit `
-  --master local[*] `
-  /opt/finsightx/app/lake_to_warehouse.py
-```
-
-Or trigger through Analytics Service:
-
-```powershell
-Invoke-RestMethod `
-  -Uri http://localhost:8007/api/v1/etl/lake/run `
-  -Method POST
+kubectl cluster-info --context kind-finsightx
 ```
 
 ---
 
-# Service URLs
+## Create Namespace
 
-| Service | URL |
-|---|---|
-| API Gateway | http://localhost:8002 |
-| Customer Service | http://localhost:8009 |
-| Transaction Service | http://localhost:8010 |
-| Fraud Service | http://localhost:8004 |
-| Notification Service | http://localhost:8005 |
-| Audit Service | http://localhost:8006 |
-| Analytics Service | http://localhost:8007 |
-| ML Service | http://localhost:8008 |
-| PostgreSQL | localhost:5434 |
-| Redis | localhost:6380 |
-| Kafka | localhost:29092 |
-| MinIO API | http://localhost:9000 |
-| MinIO Console | http://localhost:9001 |
+```powershell
+kubectl create namespace finsightx
+```
 
 ---
 
-# Verified End-to-End Flow
+## Verify Namespace
 
-A verified ML transaction used:
-
-```text
-Amount            : ₹75,000
-Currency          : INR
-Merchant          : FinSight ML Test Merchant
-Category          : Crypto
-Location          : Chennai
-Status            : PENDING
+```powershell
+kubectl get pods -n finsightx
+kubectl get svc -n finsightx
+kubectl get deployments -n finsightx
 ```
-
-The Fraud Service successfully performed:
-
-```text
-Kafka event received
-        ↓
-Redis velocity calculated
-        ↓
-Rule assessment
-        ↓
-ML Service HTTP call
-        ↓
-Random Forest prediction
-        ↓
-PostgreSQL persistence
-        ↓
-fraud.assessed publication
-        ↓
-Idempotency marker
-```
-
-Verified result:
-
-```text
-Rule risk level       : HIGH
-Rule risk score       : 100
-ML prediction         : FRAUD
-ML fraud probability  : 92.83%
-ML risk level         : HIGH
-Model version         : 7D
-```
-
-The same event was verified in the `fraud.assessed` Kafka topic as event version `2.0`.
-
-Again, the 92.83% value is a model output from the current synthetic-data experiment, not a real-world fraud probability.
 
 ---
 
-# Engineering Highlights
+## Helm
+
+From the repository root:
+
+```powershell
+helm lint .\infrastructure\helm\finsightx
+```
+
+Install/upgrade:
+
+```powershell
+helm upgrade --install finsightx .\infrastructure\helm\finsightx `
+    --namespace finsightx `
+    --force-conflicts
+```
+
+Verify:
+
+```powershell
+helm list -n finsightx
+```
+
+---
+
+## Port Forwarding
+
+### API Gateway
+
+```powershell
+kubectl port-forward service/api-gateway 8000:8000 -n finsightx
+```
+
+### Prometheus
+
+```powershell
+kubectl port-forward service/prometheus 9090:9090 -n finsightx
+```
+
+### Grafana
+
+```powershell
+kubectl port-forward service/grafana 3000:3000 -n finsightx
+```
+
+Use:
+
+```text
+127.0.0.1
+```
+
+for local access when port-forwarding.
+
+---
+
+# 27. Useful Verification Commands
+
+## Kubernetes
+
+```powershell
+kubectl get pods -n finsightx
+```
+
+```powershell
+kubectl get deployments -n finsightx
+```
+
+```powershell
+kubectl get services -n finsightx
+```
+
+```powershell
+kubectl get pvc -n finsightx
+```
+
+```powershell
+kubectl get events -n finsightx --sort-by=.lastTimestamp
+```
+
+---
+
+## Logs
+
+Gateway:
+
+```powershell
+kubectl logs deployment/api-gateway -n finsightx --tail=100
+```
+
+Fraud:
+
+```powershell
+kubectl logs deployment/fraud-service -n finsightx --tail=100
+```
+
+ML:
+
+```powershell
+kubectl logs deployment/ml-service -n finsightx --tail=100
+```
+
+---
+
+## Prometheus
+
+After port-forwarding:
+
+```text
+http://127.0.0.1:9090
+```
+
+Example PromQL:
+
+```promql
+finsightx_fraud_events_processed_total
+```
+
+```promql
+finsightx_fraud_assessments_total
+```
+
+```promql
+finsightx_ml_predictions_total
+```
+
+```promql
+finsightx_fraud_processing_failures_total
+```
+
+Average fraud processing duration:
+
+```promql
+rate(finsightx_fraud_processing_duration_seconds_sum[5m])
+/
+rate(finsightx_fraud_processing_duration_seconds_count[5m])
+```
+
+---
+
+## Grafana
+
+After port-forwarding:
+
+```text
+http://127.0.0.1:3000
+```
+
+The Grafana dashboard can be used to observe:
+
+```text
+API traffic
+HTTP status codes
+API latency
+Fraud events
+Fraud risk levels
+ML predictions
+ML risk levels
+Processing failures
+Fraud latency
+Service health
+```
+
+---
+
+# 28. Current Verified Results
+
+The following major flows have been verified during development.
+
+## 1. Real-Time Fraud Detection
+
+A high-value Crypto transaction was processed through:
+
+```text
+Kafka
+  ↓
+Fraud Service
+  ↓
+Redis
+  ↓
+Rule Engine
+  ↓
+ML Service
+  ↓
+PostgreSQL
+  ↓
+fraud.assessed
+```
+
+---
+
+## 2. Machine Learning
+
+The Random Forest model was trained and deployed successfully.
+
+Verified:
+
+```text
+Training
+   ↓
+Model artifact
+   ↓
+ML Service
+   ↓
+HTTP inference
+   ↓
+Fraud Service
+```
+
+---
+
+## 3. Spark + MinIO
+
+Verified:
+
+```text
+Kafka
+  ↓
+Spark Structured Streaming
+  ↓
+MinIO raw
+  ↓
+MinIO processed
+```
+
+with Parquet output and checkpoints.
+
+---
+
+## 4. Warehouse
+
+Verified:
+
+```text
+MinIO processed Parquet
+  ↓
+Spark ETL
+  ↓
+PostgreSQL analytics
+```
+
+---
+
+## 5. Power BI
+
+Verified:
+
+```text
+PostgreSQL analytics
+  ↓
+Power BI
+  ↓
+Risk Dashboard
+```
+
+---
+
+## 6. Authentication and RBAC
+
+Verified:
+
+```text
+Login
+  ↓
+JWT
+  ↓
+API Gateway
+  ↓
+ADMIN authorization
+  ↓
+Successful operation
+```
+
+---
+
+## 7. Notification and Audit
+
+Verified:
+
+```text
+fraud.assessed
+   |
+   +----> Notification
+   |
+   +----> Audit
+```
+
+A high-risk notification and a successful administrative audit record were observed.
+
+---
+
+## 8. Observability
+
+Verified:
+
+```text
+Gateway/Fraud
+    ↓
+/metrics
+    ↓
+Prometheus
+    ↓
+Grafana
+```
+
+Metrics for successful fraud processing, ML predictions, risk levels, failures, and processing latency were observed.
+
+---
+
+## 9. Kubernetes
+
+Verified local cluster:
+
+```text
+kind cluster : finsightx
+namespace    : finsightx
+```
+
+Core deployments were running successfully.
+
+---
+
+## 10. Helm
+
+Verified:
+
+```text
+helm lint          -> passed
+helm upgrade/install -> deployed
+release status     -> deployed
+```
+
+The Helm release is:
+
+```text
+finsightx
+```
+
+---
+
+# 29. Engineering Highlights
 
 FinSightX demonstrates:
 
@@ -1233,13 +2323,18 @@ FinSightX demonstrates:
 - Microservice architecture
 - Event-driven architecture
 - REST API development
+- API Gateway pattern
+- JWT authentication
+- RBAC
 - Kafka-based asynchronous communication
 - Redis-based real-time velocity detection
+- Redis idempotency
 - Rule-based fraud detection
 - Machine-learning fraud detection
 - Dedicated ML inference service
 - Feature engineering
 - Random Forest classification
+- Synthetic-data evaluation
 - MLflow experiment tracking
 - Spark Structured Streaming
 - MinIO/S3-compatible data lake
@@ -1249,90 +2344,206 @@ FinSightX demonstrates:
 - Star-schema modeling
 - ETL pipelines
 - Power BI business analytics
-- JWT security
-- Idempotent event processing
+- Notification processing
+- Audit logging
 - Retry and DLQ concepts
+- Prometheus instrumentation
+- Grafana dashboards
 - Docker multi-container deployment
-- Kubernetes-ready infrastructure
-- Helm
-- Terraform
-- Prometheus
-- Grafana
-- Testing structure
+- Kubernetes deployment
+- kind local cluster
+- Helm packaging and release management
+- Terraform/IaC structure
+- Persistent Kubernetes storage
+- Health/readiness checks
+- End-to-end integration verification
+- Git/GitHub version control
 - CI/CD-ready repository
 
 ---
 
-# Future Enhancements
+# 30. Future Enhancements
 
-Planned/possible extensions:
+The current platform is a strong local implementation, but several production-grade extensions remain possible.
+
+## ML / MLOps
 
 - Production model registry and promotion
 - Automated model retraining
 - Model drift monitoring
+- Model explainability
+- Better model calibration
+- Real-world fraud datasets
 - Real-time feature store
-- Better online/offline feature consistency
+- Stronger online/offline feature consistency
+- Automated model validation
+
+## Event Architecture
+
 - Transactional outbox pattern
 - Kafka Schema Registry
 - Stronger event contracts
-- More advanced rule/ML score combination
-- Model explainability
-- Kubernetes deployment with Helm
-- Horizontal Pod Autoscaling
-- Kubernetes secrets management
-- Full GitHub Actions CI/CD
-- Distributed load testing
-- Advanced notification channels
-- Additional Power BI dashboards
-- Cloud deployment
-- Data quality monitoring
-- Advanced observability
+- More advanced event versioning
+- Exactly-once processing where appropriate
 
-These are extension points rather than requirements for the current local implementation.
+## Fraud Engine
+
+- More advanced rule/ML score combination
+- Explainable fraud reasons
+- Customer behavior baselines
+- Geographic anomaly detection
+- Device fingerprinting
+- Cross-customer risk signals
+
+## Kubernetes
+
+- Horizontal Pod Autoscaling
+- Production-grade ingress
+- Network policies
+- Resource limits tuning
+- Kubernetes secrets management
+- Multi-node production cluster
+- Rolling deployment strategies
+
+## Observability
+
+- More service metrics
+- Distributed tracing
+- Centralized logging
+- Alertmanager
+- SLO/SLA dashboards
+- Error-budget monitoring
+
+## CI/CD
+
+- Automated image builds
+- Automated tests in GitHub Actions
+- Container vulnerability scanning
+- Helm deployment pipelines
+- Automated Kubernetes deployment
+- Environment promotion
+
+## Data Engineering
+
+- Advanced data-quality monitoring
+- Data lineage
+- Schema evolution
+- More warehouse dimensions
+- Incremental ETL improvements
+- Larger-scale analytics
+
+## Cloud
+
+The platform can later be mapped to cloud services such as:
+
+```text
+Managed Kubernetes
+Managed Kafka
+Object Storage
+Managed PostgreSQL
+Managed Redis
+Cloud Monitoring
+Cloud ML services
+```
+
+The current implementation deliberately avoids requiring paid cloud services.
 
 ---
 
-# Author
+# 31. Author
 
 **Suriya MG**
 
 B.Tech Computer Science and Engineering  
 Vellore Institute of Technology
 
----
-
-# Project Summary
-
-FinSightX combines:
-
-**Microservices + Distributed Systems + Event-Driven Architecture + Real-Time Fraud Detection + Machine Learning + MLOps + Data Engineering + Data Warehousing + Business Intelligence + Security + Docker + Kubernetes + Monitoring**
-
-into one end-to-end financial technology platform.
-
-The project demonstrates not only how to build a fraud detection model, but how to integrate that model into a larger distributed system:
+GitHub:
 
 ```text
-Transactions
-    ↓
-Kafka Events
-    ↓
-Real-Time Processing
-    ↓
-Redis Velocity + Rules
-    ↓
-Machine Learning
-    ↓
-Fraud Assessment
-    ↓
-PostgreSQL
-    ↓
-MinIO Data Lake
-    ↓
-Spark ETL
-    ↓
-Data Warehouse
-    ↓
-Power BI
+https://github.com/Suriya1903/FinSightX
 ```
 
-The result is a complete software engineering, data engineering and AI/ML platform rather than an isolated machine-learning project.
+---
+
+# Final Project Summary
+
+FinSightX brings together a complete financial technology architecture:
+
+```text
+                         FIN SIGHT X
+                              |
+        +---------------------+---------------------+
+        |                     |                     |
+        v                     v                     v
+   Microservices         Event Streaming        Security
+        |                     |                     |
+        v                     v                     v
+   FastAPI APIs            Kafka                JWT/RBAC
+        |                     |
+        +----------+----------+
+                   |
+                   v
+            Fraud Detection
+             /           \
+            v             v
+         Redis           Rules
+            \             /
+             \           /
+              v         v
+                 ML
+                  |
+                  v
+             Random Forest
+                  |
+                  v
+           Fraud Assessment
+                  |
+                  v
+             PostgreSQL
+                  |
+        +---------+---------+
+        |                   |
+        v                   v
+   Analytics Warehouse    Operational Data
+        |
+        v
+      Power BI
+
+Parallel data engineering:
+
+Kafka
+  ↓
+Spark
+  ↓
+MinIO
+  ↓
+Warehouse ETL
+  ↓
+PostgreSQL
+  ↓
+Power BI
+
+Platform engineering:
+
+Docker
+  ↓
+kind Kubernetes
+  ↓
+Helm
+  ↓
+Prometheus
+  ↓
+Grafana
+```
+
+The project therefore demonstrates much more than a fraud-detection model.
+
+It demonstrates how to design, build, integrate, deploy, monitor, and analyze a distributed AI-powered financial platform using modern software engineering, data engineering, machine learning, security, and cloud-native technologies.
+
+---
+
+## Project Status
+
+**Current status: Core implementation completed and locally verified across application, ML, streaming, warehouse, BI, security, observability, Kubernetes, and Helm layers.**
+
+The repository is maintained as a local-first engineering project and is structured for further CI/CD and cloud deployment enhancements.
